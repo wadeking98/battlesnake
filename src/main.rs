@@ -4,64 +4,16 @@ extern crate rocket;
 use log::info;
 use rocket::fairing::AdHoc;
 use rocket::http::Status;
-use rocket::serde::{json::Json, Deserialize};
-use serde::Serialize;
-use serde_json::{Value};
-use std::collections::HashMap;
-use std::env;
-
+use rocket::serde::json::Json;
+use serde_json::Value;
+use std::{env, vec};
 
 mod logic;
+mod types;
+mod search;
 
 // API and Response Objects
 // See https://docs.battlesnake.com/api
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Game {
-    id: String,
-    ruleset: HashMap<String, Value>,
-    timeout: u32,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Board {
-    height: u32,
-    width: u32,
-    food: Vec<Coord>,
-    snakes: Vec<Battlesnake>,
-    hazards: Vec<Coord>,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Battlesnake {
-    id: String,
-    name: String,
-    health: u32,
-    body: Vec<Coord>,
-    head: Coord,
-    length: u32,
-    // latency: String,
-    shout: Option<String>,
-}
-
-#[derive(Deserialize, Serialize, Debug, PartialEq, Copy, Clone)]
-pub struct Coord {
-    x: i16,
-    y: i16,
-}
-impl Coord {
-    pub fn add(&self, c:&Coord) -> Coord{
-        return Coord { x:c.x + self.x, y: c.y + self.y }
-    }
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct GameState {
-    game: Game,
-    turn: u32,
-    board: Board,
-    you: Battlesnake,
-}
 
 #[get("/")]
 fn handle_index() -> Json<Value> {
@@ -69,7 +21,7 @@ fn handle_index() -> Json<Value> {
 }
 
 #[post("/start", format = "json", data = "<start_req>")]
-fn handle_start(start_req: Json<GameState>) -> Status {
+fn handle_start(start_req: Json<types::GameState>) -> Status {
     logic::start(
         &start_req.game,
         &start_req.turn,
@@ -81,7 +33,7 @@ fn handle_start(start_req: Json<GameState>) -> Status {
 }
 
 #[post("/move", format = "json", data = "<move_req>")]
-fn handle_move(move_req: Json<GameState>) -> Json<Value> {
+fn handle_move(move_req: Json<types::GameState>) -> Json<Value> {
     let response = logic::get_move(
         &move_req.game,
         &move_req.turn,
@@ -93,7 +45,7 @@ fn handle_move(move_req: Json<GameState>) -> Json<Value> {
 }
 
 #[post("/end", format = "json", data = "<end_req>")]
-fn handle_end(end_req: Json<GameState>) -> Status {
+fn handle_end(end_req: Json<types::GameState>) -> Status {
     logic::end(&end_req.game, &end_req.turn, &end_req.board, &end_req.you);
 
     Status::Ok

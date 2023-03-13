@@ -1,10 +1,10 @@
-use serde::Serialize;
+use bitflags::bitflags;
+use phf::phf_map;
 use rocket::serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops;
-use bitflags::bitflags;
-use phf::phf_map;
 
 pub static DIRECTIONS: phf::Map<&'static str, Coord> = phf_map! {
     "up" => Coord{y: 1, x:0},
@@ -27,9 +27,14 @@ bitflags! {
 #[macro_export]
 macro_rules! board_tile_is_free {
     ($tile:ident) => {
-        {
-            !($tile & types::Flags::BOARD_TILE_FREE_MASK).is_empty()
-        }
+        !($tile & types::Flags::BOARD_TILE_FREE_MASK).is_empty()
+    };
+}
+
+#[macro_export]
+macro_rules! get_board_tile {
+    ($board:ident, $x:expr, $y:expr) => {
+        *$board.get(&types::Coord{x:$x, y:$y}).unwrap_or(&types::Flags::EMPTY)
     };
 }
 
@@ -48,23 +53,20 @@ pub struct Board {
     pub snakes: Vec<Battlesnake>,
     pub hazards: Vec<Coord>,
 }
-fn add_coords_to_board(board: &mut Vec<Vec<Flags>>, points: &Vec<Coord>, value: Flags) {
-    for point in points{
-        let x = point.x as usize;
-        let y = point.y as usize;
-        board[x][y] = value;
+fn add_coords_to_board(board: &mut HashMap<Coord, Flags>, points: &Vec<Coord>, value: Flags) {
+    for point in points {
+        board.insert(*point, value);
     }
 }
 impl Board {
-    pub fn to_game_board(&self) -> Vec<Vec<Flags>> {
-        let mut board = vec![vec![Flags::EMPTY; self.width.into()]; self.height.into()];
+    pub fn to_game_board(&self) -> HashMap<Coord, Flags> {
+        let mut board = HashMap::new();
 
         // populate food
         add_coords_to_board(&mut board, &self.food, Flags::FOOD);
 
         // populate snakes
         for snake in &self.snakes {
-
             //populate snake body
             add_coords_to_board(&mut board, &snake.body, Flags::SNAKE);
         }
@@ -86,28 +88,29 @@ pub struct Battlesnake {
     // latency: String,
     pub shout: Option<String>,
 }
-impl PartialEq for Battlesnake{
+impl PartialEq for Battlesnake {
     fn eq(&self, other: &Self) -> bool {
         return self.id == other.id;
     }
 }
-impl Battlesnake {
-    pub fn move_snake(&mut self, game_board:&mut Vec<Vec<Flags>>, move_to:&Coord){
-        self.head = *move_to;
-        self.body.insert(0, *move_to);
-        if game_board[move_to.x as usize][move_to.y as usize] != Flags::FOOD{
-            if self.health > 0 {
-                self.health -= 1;
-            }
-            self.body.pop();
-            game_board[move_to.x as usize][move_to.y as usize] = Flags::EMPTY
-        }else{
-            self.health = 100;
-        }
-    }
-}
+// this will be useful for the minimax approach
+// impl Battlesnake {
+//     pub fn move_snake(&mut self, game_board: &mut Vec<Vec<Flags>>, move_to: &Coord) {
+//         self.head = *move_to;
+//         self.body.insert(0, *move_to);
+//         if game_board[move_to.x as usize][move_to.y as usize] != Flags::FOOD {
+//             if self.health > 0 {
+//                 self.health -= 1;
+//             }
+//             self.body.pop();
+//             game_board[move_to.x as usize][move_to.y as usize] = Flags::EMPTY
+//         } else {
+//             self.health = 100;
+//         }
+//     }
+// }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Copy, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub struct Coord {
     pub x: i16,
     pub y: i16,
@@ -121,7 +124,7 @@ impl ops::Add<Coord> for Coord {
         };
     }
 }
-impl ops::Sub<Coord> for Coord{
+impl ops::Sub<Coord> for Coord {
     type Output = Coord;
     fn sub(self, c: Coord) -> Self::Output {
         return Coord {
@@ -130,7 +133,7 @@ impl ops::Sub<Coord> for Coord{
         };
     }
 }
-impl Coord{
+impl Coord {
     pub fn distance(&self, c: &Coord) -> f32 {
         let vec = *self - *c;
         return ((vec.x.pow(2) + vec.y.pow(2)) as f32).sqrt();
@@ -144,4 +147,3 @@ pub struct GameState {
     pub board: Board,
     pub you: Battlesnake,
 }
-

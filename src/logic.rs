@@ -142,7 +142,7 @@ pub fn get_move(
     you_copy.health -= 1;
 
     // move towards closest connected food
-    let path = graph::bfs(_board, &game_board, &_you, Some(2));
+    let path = graph::bfs(_board, &game_board, &_you, Some(1));
 
     if path.len() > 0 {
         let dir_vector = path[0] - _you.head;

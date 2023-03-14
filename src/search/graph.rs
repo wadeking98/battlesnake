@@ -17,27 +17,52 @@ fn get_adj_tiles(
     return adj;
 }
 
+fn get_number_food_ancestors(
+    tile: &types::Coord,
+    trace_tree: &HashMap<types::Coord, types::Coord>,
+    game_board: &HashMap<types::Coord, types::Flags>,
+) -> u8 {
+    let mut food_ancestors: u8 = 0;
+    let mut current_tile = tile;
+    loop {
+        let parent_opt = trace_tree.get(current_tile);
+        match parent_opt {
+            Some(parent) => {
+                if get_board_tile!(game_board, parent.x, parent.y) == types::Flags::FOOD {
+                    food_ancestors += 1;
+                }
+                current_tile = parent;
+            }
+            None => {
+                break;
+            }
+        }
+    }
+    return food_ancestors;
+}
+
 pub fn bfs(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     food_connected_option: Option<u8>,
 ) -> Vec<types::Coord> {
-    let food_connected = food_connected_option.unwrap_or(1);
+    let food_connected = food_connected_option.unwrap_or(0);
     let mut frontier: VecDeque<types::Coord> = VecDeque::new();
     frontier.push_back(you.head);
     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
-    let mut current_path:Vec<types::Coord> = Vec::new();
-    let path_res = breadth_first_search_logic(
+    let res_option = breadth_first_search_logic(
         board,
         game_board,
         you,
-        &mut current_path,
         &mut frontier,
         &mut visited,
         food_connected,
     );
-    return path_res;
+    return match res_option {
+        Some(goal) => backtrack(goal, &visited),
+        None => Vec::new(),
+    };
 }
 
 fn backtrack(
@@ -56,9 +81,9 @@ fn backtrack(
             None => break,
         }
     }
-    
+
     // return early if the path is empty
-    if path.len() <= 0{
+    if path.len() <= 0 {
         return path;
     }
 
@@ -70,40 +95,39 @@ fn backtrack(
     return cleaned_path;
 }
 
+/// Finds a path to a food tile using BFS
+/// ## Arguments
+/// * board - the game board object
+/// * game_board - the hash table representation of the game board (used for faster lookup)
+/// * you - our battlesnake
+/// * frontier - keeps track of the tiles we haven't visited yet in our search
+/// * visited - keeps track of the tiles we've already visited during our search and their parent nodes (values are the parent coords)
+/// * food_connected - minimum number of food tile ancestors in the path for a food tile to be a goal
 fn breadth_first_search_logic(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
-    current_path: &mut Vec<types::Coord>,
     frontier: &mut VecDeque<types::Coord>,
     visited: &mut HashMap<types::Coord, types::Coord>,
-    mut food_connected: u8,
-) -> Vec<types::Coord> {
+    food_connected: u8,
+) -> Option<types::Coord> {
     if frontier.len() <= 0 {
-        return vec![];
+        return None;
     }
 
     let current_tile = frontier.pop_front().unwrap();
 
-    if get_board_tile!(game_board, current_tile.x, current_tile.y) == types::Flags::FOOD && !current_path.contains(&current_tile) {
-        if food_connected <= 1 {
-            let mut best_path = backtrack(current_tile, &visited);
-            current_path.append(&mut best_path);
-            return current_path.clone();
-        } else {
-            let mut path = backtrack(current_tile, &visited);
-            current_path.append(&mut path);
-            visited.clear();
-            frontier.clear();
-            frontier.push_back(current_path[current_path.len()-1]);
-            food_connected -= 1;
-        }
+    // if current tile is a food that satisfies connection requirements
+    if get_board_tile!(game_board, current_tile.x, current_tile.y) == types::Flags::FOOD
+        && get_number_food_ancestors(&current_tile, &visited, game_board) >= food_connected
+    {
+        return Some(current_tile);
     }
 
     // get adj tiles if they haven't been visited before and they're not in the current path
     let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, &game_board, you)
         .into_iter()
-        .filter(|tile| visited.get(tile).is_none() && !current_path.contains(tile))
+        .filter(|tile| visited.get(tile).is_none())
         .collect();
 
     // mark adj tiles as visited and link the parent node
@@ -116,15 +140,7 @@ fn breadth_first_search_logic(
     frontier.append(&mut adj_tiles_deque);
 
     // recursion step
-    let best_path =
-        breadth_first_search_logic(board, game_board, you, current_path, frontier, visited, food_connected);
-
-    // if we can't find a food that is connected to n other foods, return a food that is connected to n-1 foods
-    if best_path.len() > 0 {
-        return best_path;
-    } else {
-        return current_path.clone();
-    }
+    return breadth_first_search_logic(board, game_board, you, frontier, visited, food_connected);
 }
 
 #[cfg(test)]
@@ -247,7 +263,10 @@ mod test {
         let path = bfs(&board, &mut game_board, &you, None);
         assert!(path.len() > 0 && path[path.len() - 1] == types::Coord { x: 8, y: 4 });
 
-        let path_connected = bfs(&board, &game_board, &you, Some(2));
-        assert!(path_connected.len() > 0 && path_connected[path_connected.len() - 1] == types::Coord { x: 4, y: 10 });
+        let path_connected = bfs(&board, &game_board, &you, Some(1));
+        assert!(
+            path_connected.len() > 0
+                && path_connected[path_connected.len() - 1] == types::Coord { x: 0, y: 10 }
+        );
     }
 }

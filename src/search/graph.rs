@@ -40,9 +40,9 @@ fn backtrack(
             None => break,
         }
     }
-    
+
     // return early if the path is empty
-    if path.len() <= 0{
+    if path.len() <= 0 {
         return path;
     }
 
@@ -54,6 +54,14 @@ fn backtrack(
     return cleaned_path;
 }
 
+/// Finds a path to a food tile using BFS
+/// ## Arguments
+/// * board - the game board object
+/// * game_board - the hash table representation of the game board (used for faster lookup)
+/// * you - our battlesnake
+/// * frontier - keeps track of the tiles we haven't visited yet in our search
+/// * visited - keeps track of the tiles we've already visited during our search and their parent nodes (values are the parent coords)
+/// * food_connected - minimum number of food tile ancestors in the path for a food tile to be a goal
 fn breadth_first_search_logic(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
@@ -207,7 +215,7 @@ mod test {
         "#;
         let board: types::Board = serde_json::from_str(FOOD_DATA).unwrap();
         let you = board.snakes[0].clone();
-        let mut game_board = board.to_game_board();
+        let game_board = board.to_game_board();
 
         let path = bfs(&board, &mut game_board, &you, 0.5);
         assert!(path.len() > 0 && path[path.len() - 1] == types::Coord { x: 8, y: 4 });

@@ -55,7 +55,13 @@ pub struct Board {
 }
 fn add_coords_to_board(board: &mut HashMap<Coord, Flags>, points: &Vec<Coord>, value: Flags) {
     for point in points {
-        board.insert(*point, value);
+        let mut tile_val = value;
+        let old_val = board.get(point);
+        // some tiles can be occupied by multiple board entities
+        if old_val.is_some(){
+            tile_val = tile_val | *old_val.unwrap();
+        }
+        board.insert(*point, tile_val);
     }
 }
 impl Board {

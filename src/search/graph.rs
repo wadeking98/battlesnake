@@ -217,7 +217,7 @@ mod test {
         let you = board.snakes[0].clone();
         let game_board = board.to_game_board();
 
-        let path = bfs(&board, &mut game_board, &you, 0.5);
+        let path = bfs(&board, &game_board, &you, 0.5);
         assert!(path.len() > 0 && path[path.len() - 1] == types::Coord { x: 8, y: 4 });
 
     }

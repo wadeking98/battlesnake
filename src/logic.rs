@@ -21,10 +21,10 @@ pub fn info() -> Value {
 
     return json!({
         "apiversion": "1",
-        "author": "", // TODO: Your types::Battlesnake Username
-        "color": "#888888", // TODO: Choose color
-        "head": "default", // TODO: Choose head
-        "tail": "default", // TODO: Choose tail
+        "author": "tofurky", // TODO: Your types::Battlesnake Username
+        "color": "#c76d0c", // TODO: Choose color
+        "head": "chicken", // TODO: Choose head
+        "tail": "mlh-gene", // TODO: Choose tail
     });
 }
 
@@ -212,8 +212,15 @@ pub fn get_adj_tiles_connected(
         if side_moves.len() != 2 {
             return vec![];
         }
+
+        // if none of the coords take a divergent path then they are all equally connected, skip calculations
+        if !(coords_diverge(tile, (&forward_vec, &side_moves[0]), game_board)
+            || coords_diverge(tile, (&forward_vec, &side_moves[1]), game_board))
+        {
+            return moves;
+        }
         //find the best connected moves on one side of the head
-        let mut favouravble_moves = favourable_divergent_coords(
+        let mut favouravble_moves_1 = favourable_divergent_coords(
             tile,
             [&forward_vec, &side_moves[0]],
             game_board,
@@ -231,14 +238,15 @@ pub fn get_adj_tiles_connected(
             you,
             threshold,
             strict,
-        );
-        favouravble_moves.append(&mut favouravble_moves_2);
-        favouravble_moves.sort_by(|(_, a_conn), (_, b_conn)| a_conn.partial_cmp(b_conn).unwrap());
-        favouravble_moves.dedup();
+        ).into_iter().filter(|&item| !favouravble_moves_1.contains(&item)).collect();
+        let mut favourable_moves = Vec::new();
+        favourable_moves.append(&mut favouravble_moves_1);
+        favourable_moves.append(&mut favouravble_moves_2);
+        favourable_moves.sort_by(|(_, a_conn), (_, b_conn)| a_conn.partial_cmp(b_conn).unwrap());
 
         // if strict is off, we may have parts of an array that pass the connected threshold value and parts that don't because we looked at both sides of the head
         // if any part of the array passes the connected threshold, filter the whole array to only include values that pass that threshold
-        let mut favourable_moves_filtered: Vec<(&types::Coord, f32)> = favouravble_moves
+        let mut favourable_moves_filtered: Vec<(&types::Coord, f32)> = favourable_moves
             .clone()
             .into_iter()
             .filter(|(_, val)| {
@@ -247,7 +255,7 @@ pub fn get_adj_tiles_connected(
             })
             .collect();
         if favourable_moves_filtered.len() <= 0 {
-            favourable_moves_filtered = favouravble_moves;
+            favourable_moves_filtered = favourable_moves;
         }
         return favourable_moves_filtered
             .into_iter()
@@ -335,14 +343,18 @@ fn get_rand_moves(
     }
     let mut move_words: Vec<&str> = Vec::new();
     for mv in safe_moves {
-        let dir_option = types::DIRECTIONS
-            .into_iter()
-            .find_map(|(&key, &val)| if val == (mv - *from_point) { Some(key) } else { None });
-        if dir_option.is_some(){
-          move_words.push(dir_option.unwrap());
+        let dir_option = types::DIRECTIONS.into_iter().find_map(|(&key, &val)| {
+            if val == (mv - *from_point) {
+                Some(key)
+            } else {
+                None
+            }
+        });
+        if dir_option.is_some() {
+            move_words.push(dir_option.unwrap());
         }
     }
-    
+
     return move_words;
 }
 

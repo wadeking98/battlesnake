@@ -115,6 +115,11 @@ impl PartialEq for Battlesnake {
 //         }
 //     }
 // }
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct IndexedCoord{
+    pub coord: Coord,
+    pub connected_index: f32
+}
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub struct Coord {

@@ -1,7 +1,7 @@
 use crate::{get_board_tile, logic, types};
 use ordered_float::OrderedFloat;
 use priority_queue::PriorityQueue;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 /// # breadth_first_search_logic
 /// Finds a path to a food tile using BFS
@@ -12,28 +12,91 @@ use std::collections::{HashMap, VecDeque};
 /// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
 /// ## Returns:
 /// a path from our starting point to the goal
-pub fn bfs(
-    board: &types::Board,
-    game_board: &HashMap<types::Coord, types::Flags>,
-    you: &types::Battlesnake,
-    connection_threshold: f32,
-) -> Vec<types::Coord> {
-    let mut frontier: VecDeque<types::Coord> = VecDeque::new();
-    frontier.push_back(you.head);
-    let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
-    let goal_opt = breadth_first_search_logic(
-        board,
-        game_board,
-        you,
-        &mut frontier,
-        &mut visited,
-        connection_threshold,
-    );
-    return match goal_opt {
-        Some(goal) => backtrack(goal, &visited),
-        None => vec![],
-    };
-}
+// pub fn bfs(
+//     board: &types::Board,
+//     game_board: &HashMap<types::Coord, types::Flags>,
+//     you: &types::Battlesnake,
+//     connection_threshold: f32,
+// ) -> Vec<types::Coord> {
+//     let mut frontier: VecDeque<types::Coord> = VecDeque::new();
+//     frontier.push_back(you.head);
+//     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
+//     let goal_opt = breadth_first_search_logic(
+//         board,
+//         game_board,
+//         you,
+//         &mut frontier,
+//         &mut visited,
+//         connection_threshold,
+//     );
+//     return match goal_opt {
+//         Some(goal) => backtrack(goal, &visited),
+//         None => vec![],
+//     };
+// }
+
+/// # breadth_first_search_logic
+/// Finds a path to a food tile using BFS
+/// ## Arguments
+/// * board - the game board object
+/// * game_board - the hash table representation of the game board (used for faster lookup)
+/// * you - our battlesnake
+/// * frontier - keeps track of the tiles we haven't visited yet in our search
+/// * visited - keeps track of the tiles we've already visited during our search and their parent nodes (values are the parent coords)
+/// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
+/// ## Returns:
+/// an option of a tile containing a food if a path is successfully found
+// fn breadth_first_search_logic(
+//   board: &types::Board,
+//   game_board: &HashMap<types::Coord, types::Flags>,
+//   you: &types::Battlesnake,
+//   frontier: &mut VecDeque<types::Coord>,
+//   visited: &mut HashMap<types::Coord, types::Coord>,
+//   connection_threshold: f32,
+// ) -> Option<types::Coord> {
+//   if frontier.len() <= 0 {
+//       return None;
+//   }
+
+//   let current_tile = frontier.pop_front().unwrap();
+
+//   if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD).is_empty() {
+//       return Some(current_tile);
+//   }
+
+//   // get adj tiles if they haven't been visited before and they're not in the current path
+//   let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
+//       &current_tile,
+//       board,
+//       &game_board,
+//       you,
+//       connection_threshold,
+//       Some(true),
+//       None,
+//   )
+//   .into_iter()
+//   .filter(|tile| visited.get(tile).is_none())
+//   .collect();
+
+//   // mark adj tiles as visited and link the parent node
+//   for tile in &adj_tiles {
+//       visited.insert(*tile, current_tile);
+//   }
+
+//   // iterate over the frontier
+//   let mut adj_tiles_deque = VecDeque::from(adj_tiles);
+//   frontier.append(&mut adj_tiles_deque);
+
+//   // recursion step
+//   return breadth_first_search_logic(
+//       board,
+//       game_board,
+//       you,
+//       frontier,
+//       visited,
+//       connection_threshold,
+//   );
+// }
 
 /// # backtrack
 /// determines the path from the starting point to our goal
@@ -122,7 +185,11 @@ fn a_star_logic(
 
     let (current_tile, _) = frontier.pop().unwrap();
 
-    if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD).is_empty() {
+    // if we've found a food that we can get to with our current health
+    if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD)
+        .is_empty()
+        && cost_so_far.get(&current_tile).unwrap_or(&0) < &(you.health as u16)
+    {
         return Some(current_tile);
     }
 
@@ -163,69 +230,6 @@ fn a_star_logic(
         frontier,
         visited,
         cost_so_far,
-        connection_threshold,
-    );
-}
-
-/// # breadth_first_search_logic
-/// Finds a path to a food tile using BFS
-/// ## Arguments
-/// * board - the game board object
-/// * game_board - the hash table representation of the game board (used for faster lookup)
-/// * you - our battlesnake
-/// * frontier - keeps track of the tiles we haven't visited yet in our search
-/// * visited - keeps track of the tiles we've already visited during our search and their parent nodes (values are the parent coords)
-/// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
-/// ## Returns:
-/// an option of a tile containing a food if a path is successfully found
-fn breadth_first_search_logic(
-    board: &types::Board,
-    game_board: &HashMap<types::Coord, types::Flags>,
-    you: &types::Battlesnake,
-    frontier: &mut VecDeque<types::Coord>,
-    visited: &mut HashMap<types::Coord, types::Coord>,
-    connection_threshold: f32,
-) -> Option<types::Coord> {
-    if frontier.len() <= 0 {
-        return None;
-    }
-
-    let current_tile = frontier.pop_front().unwrap();
-
-    if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD).is_empty() {
-        return Some(current_tile);
-    }
-
-    // get adj tiles if they haven't been visited before and they're not in the current path
-    let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
-        &current_tile,
-        board,
-        &game_board,
-        you,
-        connection_threshold,
-        Some(true),
-        None,
-    )
-    .into_iter()
-    .filter(|tile| visited.get(tile).is_none())
-    .collect();
-
-    // mark adj tiles as visited and link the parent node
-    for tile in &adj_tiles {
-        visited.insert(*tile, current_tile);
-    }
-
-    // iterate over the frontier
-    let mut adj_tiles_deque = VecDeque::from(adj_tiles);
-    frontier.append(&mut adj_tiles_deque);
-
-    // recursion step
-    return breadth_first_search_logic(
-        board,
-        game_board,
-        you,
-        frontier,
-        visited,
         connection_threshold,
     );
 }
@@ -305,7 +309,7 @@ mod test {
               {
                 "id": "jt-0Z",
                 "name": "snake jt-0Z",
-                "health": 4,
+                "health": 100,
                 "body": [
                   {
                     "x": 4,
@@ -345,13 +349,16 @@ mod test {
           }
         "#;
         let board: types::Board = serde_json::from_str(FOOD_DATA).unwrap();
-        let you = board.snakes[0].clone();
+        let mut you = board.snakes[0].clone();
         let game_board = board.to_game_board();
 
-        let path = bfs(&board, &game_board, &you, 0.5);
-        assert!(path.len() > 0 && path[path.len() - 1] == types::Coord { x: 8, y: 4 });
-
         let a_star_path = a_star(&board, &game_board, &you, 0.5);
-        assert!(a_star_path.len() > 0 && a_star_path[a_star_path.len() - 1] == types::Coord { x: 0, y: 10 });
+        assert!(
+            a_star_path.len() > 0
+                && a_star_path[a_star_path.len() - 1] == types::Coord { x: 0, y: 10 }
+        );
+        you.health = 3;
+        let a_star_path_low = a_star(&board, &game_board, &you, 0.5);
+        assert!(a_star_path_low.len() <= 0);
     }
 }

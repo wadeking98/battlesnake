@@ -9,8 +9,6 @@ use crate::{
     types::{self, Coord},
 };
 use log::info;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 use serde_json::{json, Value};
 
 // info is called when you create your Battlesnake on play.battlesnake.com
@@ -38,21 +36,16 @@ pub fn end(_game: &types::Game, _turn: &u32, _board: &types::Board, _you: &types
     info!("GAME OVER");
 }
 
-// pub fn can_move(c: types::Coord, board: &types::Board) -> bool {
-//     if board.hazards.contains(&c) {
-//         return false;
-//     }
-//     if c.x >= board.width as i16 || c.x < 0 || c.y >= board.height as i16 || c.y < 0 {
-//         return false;
-//     }
-//     for snake in &board.snakes {
-//         if snake.body.contains(&c) {
-//             return false;
-//         }
-//     }
-//     return true;
-// }
-
+/// # get_adj_tiles
+/// gets the tiles adjacent to a given tile that are safe to move on
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
+/// ## Returns:
+/// vector of tiles adjacent to the given tile that the snake can move to
 pub fn get_adj_tiles(
     tile: &types::Coord,
     board: &types::Board,
@@ -70,7 +63,7 @@ pub fn get_adj_tiles(
     return adj;
 }
 
-/// # num_free_tiles:  
+/// # num_free_tiles  
 /// returns the number of free tiles on a board.  
 /// We need to count the occupied tiles using a hashset because some tiles can multiple board entities. (ie: overlapping snake bodies, hazard and food, etc)
 /// ## Arguments:
@@ -88,6 +81,16 @@ fn num_free_tiles(board: &types::Board) -> u8 {
     return board.height * board.width - occupied_tiles.len() as u8;
 }
 
+/// # num_connected_tiles
+/// gets the number of tiles connected to the first element in the frontier
+/// ## Arguments:
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * frontier - used to track tiles on the edge of our explored set
+/// * visited - used to track the tiles that we've already visited and their parents
+/// ## Returns:
+/// the number of tiles connected to a supplied tile in the frontier
 fn num_connected_tiles(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
@@ -109,6 +112,15 @@ fn num_connected_tiles(
     return 1 + num_connected_tiles(board, game_board, you, frontier, visited);
 }
 
+/// # percent_connected
+/// gets the percentage of game tiles connected to the first element in the frontier
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// ## Returns:
+/// the total percentage of tiles connected to a given tile
 fn percent_connected(
     tile: &types::Coord,
     board: &types::Board,
@@ -128,6 +140,14 @@ fn percent_connected(
     }
 }
 
+/// # coords_diverge
+/// determines if two tiles, adjacent to the head of the snake may be disconnected
+/// ## Arguments:
+/// * tile - the tile in question (usually the head of the snake)
+/// * unit_coords - two directions represented as unit coords (ie: "right" would be {x: 1, y: 0})
+/// * game_board - the hashmap representation of the game board
+/// ## Returns:
+/// true if it's possible that paths starting from the two directions will not be connected
 fn coords_diverge(
     tile: &types::Coord,
     unit_coords: (&types::Coord, &types::Coord),
@@ -140,23 +160,29 @@ fn coords_diverge(
     return unit_vec == (Coord { x: 0, y: 0 }) || !board_tile_is_free!(unit_vec_val);
 }
 
+/// # favourable_divergent_coords
+/// given that two tiles may not be connected, determine the most connected tile
+/// ## Arguments:
+/// * tiles - the two tiles to test
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * threshold - the percentage of total free tiles you want to be connected to
+/// * strict - true if you want to exclude all provided tiles that fall below the given threshold
+/// ## Returns:
+/// if strict is true it returns a reference to all the provided tiles that are connected above the threshold, otherwise it returns an array of
+/// tiles and their corresponding connectivity index sorted in order from least connected to most
 fn favourable_divergent_coords<'a>(
-    tile: &types::Coord,
-    unit_moves: [&'a types::Coord; 2],
-    game_board: &HashMap<types::Coord, types::Flags>,
+    tiles: [&'a types::Coord; 2],
     board: &types::Board,
+    game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     threshold: f32,
     strict: bool,
 ) -> Vec<(&'a types::Coord, f32)> {
-    let connected_unit_moves: Vec<(&types::Coord, f32)> = unit_moves
+    let connected_unit_moves: Vec<(&types::Coord, f32)> = tiles
         .into_iter()
-        .map(|mv| {
-            (
-                mv,
-                percent_connected(&(*tile + *mv), board, game_board, you),
-            )
-        })
+        .map(|tile| (tile, percent_connected(tile, board, game_board, you)))
         .collect();
     let mut connected_unit_moves_filtered: Vec<(&types::Coord, f32)> = connected_unit_moves
         .clone()
@@ -171,6 +197,34 @@ fn favourable_divergent_coords<'a>(
     return connected_unit_moves_filtered;
 }
 
+/// # distance_to_center
+/// determines the distance from a given tile to the center of the board
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// ## Returns:
+/// the float distance from the given tile to the center
+fn distance_to_center(tile: &types::Coord, board: &types::Board) -> f32 {
+    let center = Coord {
+        x: board.width as i16 / 2,
+        y: board.height as i16 / 2,
+    };
+    return tile.distance(&center);
+}
+
+/// # get_adj_tiles_connected
+/// gets the tiles adjacent to a given tile that are safe to move on and are sufficiently connected
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * theshold - the desired connectedness of any adjacent tiles
+/// * strict - if true then only tiles that fall above the connectedness threshold will be returned
+/// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
+/// ## Returns:
+/// if strict is true then ot returns all adjacent tiles that pass the connectedness threshold,
+/// else it returns all adjacent tiles in order of least to most connected
 pub fn get_adj_tiles_connected(
     tile: &types::Coord,
     board: &types::Board,
@@ -183,66 +237,74 @@ pub fn get_adj_tiles_connected(
     let strict = strict_option.unwrap_or(false);
 
     let mut moves = get_adj_tiles(tile, board, game_board, you, avoid_snake_heads_option);
-    // shuffle moves if they're equally connected
-    moves.shuffle(&mut thread_rng());
+    //sort moves by distance to center if they're equally connected
+    moves.sort_by(|a, b| distance_to_center(b, board).partial_cmp(&distance_to_center(a, board)).unwrap());
     let unit_moves: Vec<types::Coord> = (&moves).into_iter().map(|adj| *adj - *tile).collect();
     if unit_moves.len() == 2 {
         if coords_diverge(tile, (&unit_moves[0], &unit_moves[1]), game_board) {
             return favourable_divergent_coords(
-                tile,
-                [&unit_moves[0], &unit_moves[1]],
-                game_board,
+                [&moves[0], &moves[1]],
                 board,
+                game_board,
                 you,
                 threshold,
                 strict,
             )
             .into_iter()
-            .map(|(mv, _)| *mv + *tile)
+            .map(|(mv, _)| *mv)
             .collect();
         } else {
             return moves;
         }
     } else if unit_moves.len() == 3 {
-        let forward_vec = unit_moves[0] + unit_moves[1] + unit_moves[2];
-        let side_moves: Vec<Coord> = unit_moves
+        let forward_unit_vec = unit_moves[0] + unit_moves[1] + unit_moves[2];
+        let side_unit_moves: Vec<Coord> = unit_moves
             .into_iter()
-            .filter(|mv| *mv != forward_vec)
+            .filter(|mv| *mv != forward_unit_vec)
             .collect();
-        if side_moves.len() != 2 {
+        if side_unit_moves.len() != 2 {
             return vec![];
         }
 
         // if none of the coords take a divergent path then they are all equally connected, skip calculations
-        if !(coords_diverge(tile, (&forward_vec, &side_moves[0]), game_board)
-            || coords_diverge(tile, (&forward_vec, &side_moves[1]), game_board))
+        if !(coords_diverge(tile, (&forward_unit_vec, &side_unit_moves[0]), game_board)
+            || coords_diverge(tile, (&forward_unit_vec, &side_unit_moves[1]), game_board))
         {
             return moves;
         }
+
+        let side_moves: Vec<types::Coord> = side_unit_moves
+            .into_iter()
+            .map(|item| item + *tile)
+            .collect();
+        let forward_vec = forward_unit_vec + *tile;
         //find the best connected moves on one side of the head
         let mut favouravble_moves_1 = favourable_divergent_coords(
-            tile,
             [&forward_vec, &side_moves[0]],
-            game_board,
             board,
+            game_board,
             you,
             threshold,
             strict,
         );
         //find the best connected moves on the other side of the head
         let mut favouravble_moves_2 = favourable_divergent_coords(
-            tile,
             [&forward_vec, &side_moves[1]],
-            game_board,
             board,
+            game_board,
             you,
             threshold,
             strict,
-        ).into_iter().filter(|&item| !favouravble_moves_1.contains(&item)).collect();
+        )
+        .into_iter()
+        .filter(|&item| !favouravble_moves_1.contains(&item))
+        .collect();
         let mut favourable_moves = Vec::new();
         favourable_moves.append(&mut favouravble_moves_1);
         favourable_moves.append(&mut favouravble_moves_2);
-        favourable_moves.sort_by(|(_, a_conn), (_, b_conn)| a_conn.partial_cmp(b_conn).unwrap());
+
+        // sort by most connected
+        favourable_moves.sort_by(|&(_, a_conn), &(_, b_conn)| a_conn.partial_cmp(&b_conn).unwrap());
 
         // if strict is off, we may have parts of an array that pass the connected threshold value and parts that don't because we looked at both sides of the head
         // if any part of the array passes the connected threshold, filter the whole array to only include values that pass that threshold
@@ -259,17 +321,29 @@ pub fn get_adj_tiles_connected(
         }
         return favourable_moves_filtered
             .into_iter()
-            .map(|(mv, _)| *mv + *tile)
+            .map(|(mv, _)| *mv)
             .collect();
     }
     return moves;
 }
 
-fn adj_to_bigger_snake(c: &types::Coord, board: &types::Board, you: &types::Battlesnake) -> bool {
+/// # adj_to_bigger_snake
+/// determines if a tile is adjacent to the head of a bigger snake
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// * you - your battlesnake
+/// ## Returns:
+/// true if the given tile is adjacent to the head of a bigger snake
+fn adj_to_bigger_snake(
+    tile: &types::Coord,
+    board: &types::Board,
+    you: &types::Battlesnake,
+) -> bool {
     // calculate distance to other snake heads to see if we are adjacent to snakes with higher health
     for snake in &board.snakes {
         if snake != you {
-            let distance = c.distance(&snake.head);
+            let distance = tile.distance(&snake.head);
             if distance <= 1.0 && snake.length >= you.length {
                 return true;
             }
@@ -278,6 +352,13 @@ fn adj_to_bigger_snake(c: &types::Coord, board: &types::Board, you: &types::Batt
     return false;
 }
 
+/// # can_move_on_tail
+/// determines if it is safe to move on another snake's tail
+/// ## Arguments:
+/// * snakes - array of battlesnakes
+/// * coord - the tile in question
+/// ## Returns:
+/// true if we can safely move to coord
 macro_rules! can_move_on_tail {
     ($snakes:ident, $coord:ident) => {
         $snakes
@@ -287,26 +368,36 @@ macro_rules! can_move_on_tail {
     };
 }
 
+/// # can_move_board
+/// gets the tiles adjacent to a given tile that are safe to move on
+/// ## Arguments:
+/// * tile - the tile in question
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
+/// ## Returns:
+/// true if we can safely move onto tile
 pub fn can_move_board(
-    c: &types::Coord,
+    tile: &types::Coord,
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     avoid_snake_heads_option: Option<bool>,
 ) -> bool {
     let avoid_snake_heads = avoid_snake_heads_option.unwrap_or(true);
-    if c.x as u8 >= board.width || c.y as u8 >= board.height || c.x < 0 || c.y < 0 {
+    if tile.x as u8 >= board.width || tile.y as u8 >= board.height || tile.x < 0 || tile.y < 0 {
         return false;
     }
     // special case: we can move onto a tile that has the tip of a snake's tail as long as we know that snake hasn't just eaten
     // if tile is free: Food | Ally | Empty
-    let board_tile = get_board_tile!(game_board, c.x, c.y);
+    let board_tile = get_board_tile!(game_board, tile.x, tile.y);
     let snakes = &board.snakes;
     if board_tile_is_free!(board_tile)
-        || (board_tile == types::Flags::SNAKE && can_move_on_tail!(snakes, c))
+        || (board_tile == types::Flags::SNAKE && can_move_on_tail!(snakes, tile))
     {
         // if tile is adjacent to head, only return true if we can't move anywhere else
-        if adj_to_bigger_snake(c, board, you) && avoid_snake_heads {
+        if adj_to_bigger_snake(tile, board, you) && avoid_snake_heads {
             return false;
         }
         return true;
@@ -314,6 +405,16 @@ pub fn can_move_board(
     return false;
 }
 
+/// # get_rand_moves
+/// gets the most favourable moves, shuffling them if they are equally favourable
+/// ## Arguments:
+/// * from_point - the tile we want to move from
+/// * board - the battlesnake game board
+/// * game_board - the hashmap representation of the game board
+/// * you - your battlesnake
+/// * theshold - the connectedness theshold we want of a tile to be considered favourable
+/// ## Returns:
+/// an array of move options
 fn get_rand_moves(
     from_point: &types::Coord,
     board: &types::Board,
@@ -376,7 +477,7 @@ pub fn get_move(
 
     let tile_connection_threshold = 0.5;
     // move towards closest connected food
-    let path = graph::bfs(_board, &game_board, &_you, tile_connection_threshold);
+    let path = graph::a_star(_board, &game_board, &_you, tile_connection_threshold);
 
     if path.len() > 0 {
         let dir_vector = path[0] - _you.head;

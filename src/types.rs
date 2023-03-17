@@ -20,14 +20,14 @@ bitflags! {
         const ALLY = 0x04;
         const SNAKE = 0x08;
         const HAZARD = 0x10;
-        const BOARD_TILE_FREE_MASK = 0x07;
+        const BOARD_TILE_OCCUPIED_MASK = 0x8;
     }
 }
 
 #[macro_export]
 macro_rules! board_tile_is_free {
     ($tile:ident) => {
-        !($tile & types::Flags::BOARD_TILE_FREE_MASK).is_empty()
+        ($tile & types::Flags::BOARD_TILE_OCCUPIED_MASK).is_empty()
     };
 }
 

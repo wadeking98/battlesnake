@@ -89,6 +89,7 @@ fn num_free_tiles(board: &types::Board) -> u8 {
 /// * you - your battlesnake
 /// * frontier - used to track tiles on the edge of our explored set
 /// * visited - used to track the tiles that we've already visited and their parents
+/// * exclude_tiles - list of tiles to exclude from flood fill, useful when we want to calculate connectivity of a tile given a snake's future position
 /// ## Returns:
 /// the number of tiles connected to a supplied tile in the frontier
 fn num_connected_tiles(
@@ -97,6 +98,7 @@ fn num_connected_tiles(
     you: &types::Battlesnake,
     frontier: &mut VecDeque<types::Coord>,
     visited: &mut HashSet<types::Coord>,
+    exclude_tiles: &Vec<types::Coord>
 ) -> u8 {
     if frontier.len() <= 0 {
         return 1;
@@ -104,12 +106,12 @@ fn num_connected_tiles(
     let current_tile = frontier.pop_front().unwrap();
     let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None)
         .into_iter()
-        .filter(|adj| visited.get(adj).is_none())
+        .filter(|adj| visited.get(adj).is_none() && !exclude_tiles.contains(adj))
         .collect();
     visited.extend(adj_tiles.clone());
     let mut adj_deque = VecDeque::from(adj_tiles);
     frontier.append(&mut adj_deque);
-    return 1 + num_connected_tiles(board, game_board, you, frontier, visited);
+    return 1 + num_connected_tiles(board, game_board, you, frontier, visited, exclude_tiles);
 }
 
 /// # percent_connected
@@ -119,6 +121,7 @@ fn num_connected_tiles(
 /// * board - the battlesnake game board
 /// * game_board - the hashmap representation of the game board
 /// * you - your battlesnake
+/// * exclude_tiles - list of tiles to exclude from flood fill, useful when we want to calculate connectivity of a tile given a snake's future position
 /// ## Returns:
 /// the total percentage of tiles connected to a given tile
 fn percent_connected(
@@ -126,12 +129,13 @@ fn percent_connected(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
+    exclude_tiles: &Vec<types::Coord>,
 ) -> f32 {
     let free_tiles = num_free_tiles(board);
 
     let mut frontier = VecDeque::from([*tile]);
     let mut visited: HashSet<types::Coord> = HashSet::new();
-    let connected_tiles = num_connected_tiles(board, game_board, you, &mut frontier, &mut visited);
+    let connected_tiles = num_connected_tiles(board, game_board, you, &mut frontier, &mut visited, exclude_tiles);
 
     if free_tiles == 0 {
         return 0.0;
@@ -167,6 +171,7 @@ fn coords_diverge(
 /// * board - the battlesnake game board
 /// * game_board - the hashmap representation of the game board
 /// * you - your battlesnake
+/// * exclude_tiles - list of tiles to exclude from flood fill, useful when we want to calculate connectivity of a tile given a snake's future position
 /// * threshold - the percentage of total free tiles you want to be connected to
 /// * strict - true if you want to exclude all provided tiles that fall below the given threshold
 /// ## Returns:
@@ -177,12 +182,13 @@ fn favourable_divergent_coords<'a>(
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
+    exclude_tiles: &Vec<types::Coord>,
     threshold: f32,
     strict: bool,
 ) -> Vec<(&'a types::Coord, f32)> {
     let connected_unit_moves: Vec<(&types::Coord, f32)> = tiles
         .into_iter()
-        .map(|tile| (tile, percent_connected(tile, board, game_board, you)))
+        .map(|tile| (tile, percent_connected(tile, board, game_board, you, exclude_tiles)))
         .collect();
     let mut connected_unit_moves_filtered: Vec<(&types::Coord, f32)> = connected_unit_moves
         .clone()
@@ -222,6 +228,7 @@ fn distance_to_center(tile: &types::Coord, board: &types::Board) -> f32 {
 /// * theshold - the desired connectedness of any adjacent tiles
 /// * strict - if true then only tiles that fall above the connectedness threshold will be returned
 /// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
+/// * current_planned_moves_option - option to avoid the provided tiles
 /// ## Returns:
 /// if strict is true then ot returns all adjacent tiles that pass the connectedness threshold,
 /// else it returns all adjacent tiles in order of least to most connected
@@ -233,12 +240,21 @@ pub fn get_adj_tiles_connected(
     threshold: f32,
     strict_option: Option<bool>,
     avoid_snake_heads_option: Option<bool>,
+    current_planned_moves_option: Option<Vec<types::Coord>>,
 ) -> Vec<types::Coord> {
     let strict = strict_option.unwrap_or(false);
+    let current_planned_moves: Vec<types::Coord> = current_planned_moves_option.unwrap_or(vec![]);
 
-    let mut moves = get_adj_tiles(tile, board, game_board, you, avoid_snake_heads_option);
+    // get adjacent moves if they don't loop back on the same path
+    let mut moves: Vec<types::Coord> = get_adj_tiles(tile, board, game_board, you, avoid_snake_heads_option)
+        .into_iter()
+        .filter(|item| !current_planned_moves.contains(item)).collect();
     //sort moves by distance to center if they're equally connected
-    moves.sort_by(|a, b| distance_to_center(b, board).partial_cmp(&distance_to_center(a, board)).unwrap());
+    moves.sort_by(|a, b| {
+        distance_to_center(b, board)
+            .partial_cmp(&distance_to_center(a, board))
+            .unwrap()
+    });
     let unit_moves: Vec<types::Coord> = (&moves).into_iter().map(|adj| *adj - *tile).collect();
     if unit_moves.len() == 2 {
         if coords_diverge(tile, (&unit_moves[0], &unit_moves[1]), game_board) {
@@ -247,6 +263,7 @@ pub fn get_adj_tiles_connected(
                 board,
                 game_board,
                 you,
+                &current_planned_moves,
                 threshold,
                 strict,
             )
@@ -284,6 +301,7 @@ pub fn get_adj_tiles_connected(
             board,
             game_board,
             you,
+            &current_planned_moves,
             threshold,
             strict,
         );
@@ -293,6 +311,7 @@ pub fn get_adj_tiles_connected(
             board,
             game_board,
             you,
+            &current_planned_moves,
             threshold,
             strict,
         )
@@ -430,6 +449,7 @@ fn get_rand_moves(
         threshold,
         Some(false),
         None,
+        None,
     );
     if safe_moves.len() <= 0 {
         safe_moves = get_adj_tiles_connected(
@@ -440,6 +460,7 @@ fn get_rand_moves(
             threshold,
             Some(false),
             Some(false),
+            None
         );
     }
     let mut move_words: Vec<&str> = Vec::new();
@@ -478,7 +499,6 @@ pub fn get_move(
     let tile_connection_threshold = 0.5;
     // move towards closest connected food
     let path = graph::a_star(_board, &game_board, &_you, tile_connection_threshold);
-
     if path.len() > 0 {
         let dir_vector = path[0] - _you.head;
         let dir = types::DIRECTIONS.into_iter().find_map(|(key, &val)| {
@@ -981,10 +1001,10 @@ mod tests {
         let game_board = board.to_game_board();
         let you: &types::Battlesnake = &board.snakes[0];
         let mut connected_tiles =
-            get_adj_tiles_connected(&you.head, &board, &game_board, you, 0.8, Some(true), None);
+            get_adj_tiles_connected(&you.head, &board, &game_board, you, 0.8, Some(true), None, None);
         assert!(connected_tiles[0] == Coord { x: 4, y: 4 });
         connected_tiles =
-            get_adj_tiles_connected(&you.head, &board, &game_board, you, 0.01, Some(true), None);
+            get_adj_tiles_connected(&you.head, &board, &game_board, you, 0.01, Some(true), None, None);
         assert!(
             connected_tiles.len() == 3
                 && connected_tiles[connected_tiles.len() - 1] == Coord { x: 4, y: 4 }

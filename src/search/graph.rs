@@ -1,6 +1,7 @@
 use crate::{get_board_tile, logic, types};
 use ordered_float::OrderedFloat;
 use priority_queue::PriorityQueue;
+use std::cmp;
 use std::collections::HashMap;
 
 /// # breadth_first_search_logic
@@ -193,6 +194,12 @@ fn a_star_logic(
         return Some(current_tile);
     }
 
+    // get current path so we make sure we don't intersect our own path
+    let current_path = backtrack(current_tile, visited);
+    let path_index =
+        usize::try_from(cmp::max(0, current_path.len() as i32 - you.length as i32)).unwrap_or(0);
+    let future_snake_positions: Vec<types::Coord> = current_path[path_index..].to_vec();
+
     // get adj tiles if they haven't been visited before and they're not in the current path
     let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
         &current_tile,
@@ -202,6 +209,7 @@ fn a_star_logic(
         connection_threshold,
         Some(true),
         None,
+        Some(future_snake_positions),
     );
 
     let current_cost = *cost_so_far.get(&current_tile).unwrap_or(&0);
@@ -360,5 +368,89 @@ mod test {
         you.health = 3;
         let a_star_path_low = a_star(&board, &game_board, &you, 0.5);
         assert!(a_star_path_low.len() <= 0);
+    }
+    #[test]
+    fn avoid_future_poorly_connected_tiles() {
+        const BOARD_DATA: &str = r#"
+      {
+        "food": [
+          {
+            "x": 2,
+            "y": 2
+          }
+        ],
+        "snakes": [
+          {
+            "id": "5h9p6",
+            "name": "snake 5h9p6",
+            "health": 100,
+            "body": [
+              {
+                "x": 4,
+                "y": 2
+              },
+              {
+                "x": 4,
+                "y": 3
+              },
+              {
+                "x": 4,
+                "y": 4
+              },
+              {
+                "x": 3,
+                "y": 4
+              },
+              {
+                "x": 2,
+                "y": 4
+              },
+              {
+                "x": 2,
+                "y": 3
+              },
+              {
+                "x": 1,
+                "y": 3
+              },
+              {
+                "x": 1,
+                "y": 2
+              },
+              {
+                "x": 1,
+                "y": 1
+              },
+              {
+                "x": 2,
+                "y": 1
+              },
+              {
+                "x": 2,
+                "y": 0
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 4,
+              "y": 2
+            },
+            "length": 11,
+            "shout": "",
+            "squad": ""
+          }
+        ],
+        "width": 11,
+        "height": 11,
+        "hazards": []
+      }
+      "#;
+        let board: types::Board = serde_json::from_str(BOARD_DATA).unwrap();
+        let you = &board.snakes[0];
+        let game_board = board.to_game_board();
+
+        let a_star_path = a_star(&board, &game_board, you, 0.5);
+        // a valid path cannot exist here because approaching the tile disconnects it from the rest of the board
+        assert!(a_star_path.len() <= 0);
     }
 }

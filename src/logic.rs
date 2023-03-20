@@ -497,8 +497,13 @@ pub fn get_move(
     you_copy.health -= 1;
 
     let tile_connection_threshold = 0.5;
-    // move towards closest connected food
-    let path = graph::a_star(_board, &game_board, &_you, tile_connection_threshold);
+
+    // be less hungry, try to control the center if we have high health
+    let mut path: Vec<types::Coord> = Vec::new();
+    if _you.health < 75{
+      path = graph::a_star(_board, &game_board, &_you, tile_connection_threshold);
+    }
+  
     if path.len() > 0 {
         let dir_vector = path[0] - _you.head;
         let dir = types::DIRECTIONS.into_iter().find_map(|(key, &val)| {

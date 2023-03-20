@@ -564,7 +564,7 @@ pub fn get_move(
     let mut safe_moves: Vec<&str> = vec![];
 
     // check and see if we're trapped in a box
-    if graph::inside_box(you, board, &game_board, 0.3) {
+    if graph::inside_box(you, board, &game_board, 0.4) {
         // find square to escape from
         let escape_tile =
             graph::find_key_hole(board, &game_board, you).unwrap_or(Coord { x: 0, y: 0 });
@@ -583,7 +583,9 @@ pub fn get_move(
         let unit_moves = adj_moves.into_iter().map(|item| item - you.head).collect();
 
         safe_moves.append(&mut dirs_to_moves(unit_moves));
-    } else { // otherwise look for food or other stuff
+    } 
+    
+    if safe_moves.len() <= 0 { // otherwise look for food or other stuff
         let tile_connection_threshold = 0.5;
         // move towards closest connected food
         let path = graph::a_star(board, &game_board, &you, tile_connection_threshold);

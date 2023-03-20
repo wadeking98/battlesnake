@@ -498,9 +498,9 @@ pub fn get_move(
 
     let tile_connection_threshold = 0.5;
 
-    // be less hungry, try to control the center if we have high health
+    // be less hungry, try to control the center if we have high health and are suffieciently long
     let mut path: Vec<types::Coord> = Vec::new();
-    if _you.health < 75{
+    if _you.health < 75 || (_you.length as f32 / (_board.width * _board.height) as f32) < 0.15 {
       path = graph::a_star(_board, &game_board, &_you, tile_connection_threshold);
     }
   

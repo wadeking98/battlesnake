@@ -514,7 +514,8 @@ fn get_rand_moves(
             None,
         );
     }
-    let unit_moves: Vec<types::Coord> = safe_moves.into_iter().map(|item| item - you.head).collect();
+    let unit_moves: Vec<types::Coord> =
+        safe_moves.into_iter().map(|item| item - you.head).collect();
     let move_words = dirs_to_moves(unit_moves);
 
     return move_words;
@@ -559,14 +560,19 @@ pub fn get_move(
             graph::find_key_hole(board, &game_board, you).unwrap_or(Coord { x: 0, y: 0 });
         let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0);
         let next_move = path.first();
-        if next_move.is_some(){
-          let unit_move = *next_move.unwrap() - you.head;
-          safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
+
+        //because we're asking it to move to an occupied tile it will sometimes suggest an occupied tile as the next move
+        if next_move.is_some()
+            && can_move_board(next_move.unwrap(), board, &game_board, you, Some(false))
+        {
+            let unit_move = *next_move.unwrap() - you.head;
+            safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
         }
         // safe_moves.append(&mut dirs_to_moves(unit_moves));
-    } 
-    
-    if safe_moves.len() <= 0 { // otherwise look for food or other stuff
+    }
+
+    if safe_moves.len() <= 0 {
+        // otherwise look for food or other stuff
         let tile_connection_threshold = 0.5;
         // move towards closest connected food
         let path = graph::a_star(board, &game_board, &you, tile_connection_threshold);

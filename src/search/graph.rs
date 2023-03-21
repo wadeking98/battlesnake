@@ -22,15 +22,13 @@ pub fn dfs_long(
     you: &types::Battlesnake,
     connection_threshold: f32,
 ) -> Vec<types::Coord> {
-    let mut frontier: PriorityQueue<types::Coord, OrderedFloat<f32>> = PriorityQueue::new();
-    frontier.push(you.head, OrderedFloat(you.head.distance(goal)));
     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
     let success = depth_first_search_logic(
         goal,
+        &you.head,
         board,
         game_board,
         you,
-        &mut frontier,
         &mut visited,
         connection_threshold,
     );
@@ -54,55 +52,60 @@ pub fn dfs_long(
 /// an option of a tile containing a food if a path is successfully found
 fn depth_first_search_logic(
     goal: &types::Coord,
+    from: &types::Coord,
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
-    frontier: &mut PriorityQueue<types::Coord, OrderedFloat<f32>>,
     visited: &mut HashMap<types::Coord, types::Coord>,
     connection_threshold: f32,
 ) -> Option<types::Coord> {
-    if frontier.len() <= 0 {
-        return None;
-    }
-
-    let (current_tile, _) = frontier.pop().unwrap();
-
-    if current_tile.distance(goal) <= 1.0 {
-        visited.insert(*goal, current_tile);
+    if from.distance(goal) <= 1.0 {
+        visited.insert(*goal, *from);
         return Some(*goal);
     }
 
+    // get current path so we make sure we don't intersect our own path
+    let current_path = backtrack(*from, visited);
+    let path_index =
+        usize::try_from(cmp::max(0, current_path.len() as i32 - you.length as i32)).unwrap_or(0);
+    let future_snake_positions: Vec<types::Coord> = current_path[path_index..].to_vec();
+
     // get adj tiles if they haven't been visited before and they're not in the current path
-    let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
-        &current_tile,
+    let mut adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
+        from,
         board,
         &game_board,
         you,
         connection_threshold,
-        Some(true),
+        Some(false),
         None,
-        None,
+        Some(future_snake_positions),
     )
     .into_iter()
-    .filter(|tile| visited.get(tile).is_none())
+    .filter(|item| visited.get(item).is_none())
     .collect();
+
+    adj_tiles.sort_by(|a, b| goal.distance(b).partial_cmp(&goal.distance(a)).unwrap());
 
     // mark adj tiles as visited and link the parent node
     for tile in &adj_tiles {
-        visited.insert(*tile, current_tile);
-        frontier.push(*tile, OrderedFloat(tile.distance(goal)));
+        visited.insert(*tile, *from);
+        let success = depth_first_search_logic(
+            goal,
+            tile,
+            board,
+            game_board,
+            you,
+            visited,
+            connection_threshold,
+        );
+        if success.is_some() {
+            return success;
+        }
     }
 
-    // recursion step
-    return depth_first_search_logic(
-        goal,
-        board,
-        game_board,
-        you,
-        frontier,
-        visited,
-        connection_threshold,
-    );
+    // search failed so backtrack
+    return None;
 }
 
 pub fn inside_box(

@@ -554,7 +554,7 @@ pub fn get_move(
     let mut safe_moves: Vec<&str> = vec![];
 
     // check and see if we're trapped in a box
-    if graph::inside_box(you, board, &game_board, 0.2) {
+    if graph::inside_box(you, board, &game_board, 0.3) {
         // find square to escape from
         let escape_tile =
             graph::find_key_hole(board, &game_board, you).unwrap_or(Coord { x: 0, y: 0 });
@@ -574,8 +574,13 @@ pub fn get_move(
     if safe_moves.len() <= 0 {
         // otherwise look for food or other stuff
         let tile_connection_threshold = 0.5;
-        // move towards closest connected food
-        let path = graph::a_star(board, &game_board, &you, tile_connection_threshold);
+
+        // be less hungry, try to control the center if we have high health and are suffieciently long
+        let mut path: Vec<types::Coord> = Vec::new();
+        if you.health < 75 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
+            path = graph::a_star(board, &game_board, &you, tile_connection_threshold);
+        }
+
         if path.len() > 0 {
             let dir_vector = path[0] - you.head;
             let dir = types::DIRECTIONS.into_iter().find_map(|(key, &val)| {

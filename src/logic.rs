@@ -514,19 +514,8 @@ fn get_rand_moves(
             None,
         );
     }
-    let mut move_words: Vec<&str> = Vec::new();
-    for mv in safe_moves {
-        let dir_option = types::DIRECTIONS.into_iter().find_map(|(&key, &val)| {
-            if val == (mv - *from_point) {
-                Some(key)
-            } else {
-                None
-            }
-        });
-        if dir_option.is_some() {
-            move_words.push(dir_option.unwrap());
-        }
-    }
+    let unit_moves: Vec<types::Coord> = safe_moves.into_iter().map(|item| item - you.head).collect();
+    let move_words = dirs_to_moves(unit_moves);
 
     return move_words;
 }
@@ -564,25 +553,17 @@ pub fn get_move(
     let mut safe_moves: Vec<&str> = vec![];
 
     // check and see if we're trapped in a box
-    if graph::inside_box(you, board, &game_board, 0.4) {
+    if graph::inside_box(you, board, &game_board, 0.2) {
         // find square to escape from
         let escape_tile =
             graph::find_key_hole(board, &game_board, you).unwrap_or(Coord { x: 0, y: 0 });
-
-        // find adj moves that don't block the escape square
-        let mut adj_moves: Vec<types::Coord> =
-            get_adj_tiles(&you.head, board, &game_board, you, None)
-                .into_iter()
-                .filter(|item| graph::a_star_to_tile(&escape_tile, item, board, &game_board, you, 0.0).len() > 0)
-                .collect();
-        adj_moves.sort_by(|a, b| {
-            a.distance(&escape_tile)
-                .partial_cmp(&b.distance(&escape_tile))
-                .unwrap()
-        });
-        let unit_moves = adj_moves.into_iter().map(|item| item - you.head).collect();
-
-        safe_moves.append(&mut dirs_to_moves(unit_moves));
+        let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0);
+        let next_move = path.first();
+        if next_move.is_some(){
+          let unit_move = *next_move.unwrap() - you.head;
+          safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
+        }
+        // safe_moves.append(&mut dirs_to_moves(unit_moves));
     } 
     
     if safe_moves.len() <= 0 { // otherwise look for food or other stuff

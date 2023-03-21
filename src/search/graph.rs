@@ -5,41 +5,45 @@ use priority_queue::PriorityQueue;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-/// # breadth_first_search_logic
-/// Finds a path to a food tile using BFS
+/// # dfs_long
+/// finds a long path to a specified coordinate. uses hueristic distance to approximate longest path
 /// ## Arguments
+/// * goal - the goal to search for
 /// * board - the game board object
 /// * game_board - the hash table representation of the game board (used for faster lookup)
 /// * you - our battlesnake
 /// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
 /// ## Returns:
 /// a path from our starting point to the goal
-// pub fn bfs(
-//     board: &types::Board,
-//     game_board: &HashMap<types::Coord, types::Flags>,
-//     you: &types::Battlesnake,
-//     connection_threshold: f32,
-// ) -> Vec<types::Coord> {
-//     let mut frontier: VecDeque<types::Coord> = VecDeque::new();
-//     frontier.push_back(you.head);
-//     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
-//     let goal_opt = breadth_first_search_logic(
-//         board,
-//         game_board,
-//         you,
-//         &mut frontier,
-//         &mut visited,
-//         connection_threshold,
-//     );
-//     return match goal_opt {
-//         Some(goal) => backtrack(goal, &visited),
-//         None => vec![],
-//     };
-// }
+pub fn dfs_long(
+    goal: &types::Coord,
+    board: &types::Board,
+    game_board: &HashMap<types::Coord, types::Flags>,
+    you: &types::Battlesnake,
+    connection_threshold: f32,
+) -> Vec<types::Coord> {
+    let mut frontier: PriorityQueue<types::Coord, OrderedFloat<f32>> = PriorityQueue::new();
+    frontier.push(you.head, OrderedFloat(you.head.distance(goal)));
+    let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
+    let success = depth_first_search_logic(
+        goal,
+        board,
+        game_board,
+        you,
+        &mut frontier,
+        &mut visited,
+        connection_threshold,
+    );
+    return match success {
+        Some(tile) => backtrack(tile, &visited),
+        None => vec![],
+    };
+}
 
-/// # breadth_first_search_logic
-/// Finds a path to a food tile using BFS
+/// # depth_first_search_logic
+/// Approximates the longest path to a specified coord using a priority queue
 /// ## Arguments
+/// * goal - the goal tile to search for
 /// * board - the game board object
 /// * game_board - the hash table representation of the game board (used for faster lookup)
 /// * you - our battlesnake
@@ -48,57 +52,58 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
 /// ## Returns:
 /// an option of a tile containing a food if a path is successfully found
-// fn breadth_first_search_logic(
-//   board: &types::Board,
-//   game_board: &HashMap<types::Coord, types::Flags>,
-//   you: &types::Battlesnake,
-//   frontier: &mut VecDeque<types::Coord>,
-//   visited: &mut HashMap<types::Coord, types::Coord>,
-//   connection_threshold: f32,
-// ) -> Option<types::Coord> {
-//   if frontier.len() <= 0 {
-//       return None;
-//   }
+fn depth_first_search_logic(
+    goal: &types::Coord,
+    board: &types::Board,
+    game_board: &HashMap<types::Coord, types::Flags>,
+    you: &types::Battlesnake,
+    frontier: &mut PriorityQueue<types::Coord, OrderedFloat<f32>>,
+    visited: &mut HashMap<types::Coord, types::Coord>,
+    connection_threshold: f32,
+) -> Option<types::Coord> {
+    if frontier.len() <= 0 {
+        return None;
+    }
 
-//   let current_tile = frontier.pop_front().unwrap();
+    let (current_tile, _) = frontier.pop().unwrap();
 
-//   if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD).is_empty() {
-//       return Some(current_tile);
-//   }
+    if current_tile.distance(goal) <= 1.0 {
+        visited.insert(*goal, current_tile);
+        return Some(*goal);
+    }
 
-//   // get adj tiles if they haven't been visited before and they're not in the current path
-//   let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
-//       &current_tile,
-//       board,
-//       &game_board,
-//       you,
-//       connection_threshold,
-//       Some(true),
-//       None,
-//   )
-//   .into_iter()
-//   .filter(|tile| visited.get(tile).is_none())
-//   .collect();
+    // get adj tiles if they haven't been visited before and they're not in the current path
+    let adj_tiles: Vec<types::Coord> = logic::get_adj_tiles_connected(
+        &current_tile,
+        board,
+        &game_board,
+        you,
+        connection_threshold,
+        Some(true),
+        None,
+        None,
+    )
+    .into_iter()
+    .filter(|tile| visited.get(tile).is_none())
+    .collect();
 
-//   // mark adj tiles as visited and link the parent node
-//   for tile in &adj_tiles {
-//       visited.insert(*tile, current_tile);
-//   }
+    // mark adj tiles as visited and link the parent node
+    for tile in &adj_tiles {
+        visited.insert(*tile, current_tile);
+        frontier.push(*tile, OrderedFloat(tile.distance(goal)));
+    }
 
-//   // iterate over the frontier
-//   let mut adj_tiles_deque = VecDeque::from(adj_tiles);
-//   frontier.append(&mut adj_tiles_deque);
-
-//   // recursion step
-//   return breadth_first_search_logic(
-//       board,
-//       game_board,
-//       you,
-//       frontier,
-//       visited,
-//       connection_threshold,
-//   );
-// }
+    // recursion step
+    return depth_first_search_logic(
+        goal,
+        board,
+        game_board,
+        you,
+        frontier,
+        visited,
+        connection_threshold,
+    );
+}
 
 pub fn inside_box(
     you: &types::Battlesnake,
@@ -305,55 +310,12 @@ pub fn a_star(
     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
     let mut cost_so_far: HashMap<types::Coord, u16> = HashMap::new();
     let path_found = a_star_logic(
-        None,
         board,
         game_board,
         you,
         &mut frontier,
         &mut visited,
         &mut cost_so_far,
-        &Vec::new(),
-        connection_threshold,
-    );
-
-    return match path_found {
-        Some(goal) => backtrack(goal, &visited),
-        None => vec![],
-    };
-}
-
-/// # a_star_to_tile
-/// determines the shortest path to a specified destination
-/// ## Arguments:
-/// * goal - the position to go to
-/// * start - the position to start from
-/// * board - battlesnake game board
-/// * game_board - hashmap representation of the board
-/// * you - your battlesnake
-/// * connection_threshold - only go to goal if it passes this connection threshold
-/// ## Returns:
-/// The shortest path to the goal tile
-pub fn a_star_to_tile(
-    goal: &types::Coord,
-    start: &types::Coord,
-    board: &types::Board,
-    game_board: &HashMap<types::Coord, types::Flags>,
-    you: &types::Battlesnake,
-    connection_threshold: f32,
-) -> Vec<types::Coord> {
-    let mut frontier: PriorityQueue<types::Coord, OrderedFloat<f32>> = PriorityQueue::new();
-    frontier.push(*start, OrderedFloat(0.0));
-    let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
-    let mut cost_so_far: HashMap<types::Coord, u16> = HashMap::new();
-    let path_found = a_star_logic(
-        Some(*goal),
-        board,
-        game_board,
-        you,
-        &mut frontier,
-        &mut visited,
-        &mut cost_so_far,
-        &Vec::from([*start]),
         connection_threshold,
     );
 
@@ -378,14 +340,12 @@ pub fn a_star_to_tile(
 /// ## Returns:
 /// The goal tile if a path is found
 fn a_star_logic(
-    goal_tile_option: Option<types::Coord>,
     board: &types::Board,
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     frontier: &mut PriorityQueue<types::Coord, OrderedFloat<f32>>,
     visited: &mut HashMap<types::Coord, types::Coord>,
     cost_so_far: &mut HashMap<types::Coord, u16>,
-    exclude_tiles: &Vec<types::Coord>,
     connection_threshold: f32,
 ) -> Option<types::Coord> {
     if frontier.is_empty() {
@@ -395,17 +355,11 @@ fn a_star_logic(
     let (current_tile, _) = frontier.pop().unwrap();
 
     // if we've found a food that we can get to with our current health
-    if goal_tile_option.is_none()
-        && !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD)
-            .is_empty()
+    if !(get_board_tile!(game_board, current_tile.x, current_tile.y) & types::Flags::FOOD)
+        .is_empty()
         && cost_so_far.get(&current_tile).unwrap_or(&0) < &(you.health as u16)
     {
         return Some(current_tile);
-    } else if goal_tile_option.is_some() // the goal tile may be a snake body so we need to return early or we'll miss it
-        && goal_tile_option.unwrap().distance(&current_tile) <= 1.0
-    {
-        visited.insert(goal_tile_option.unwrap(), current_tile);
-        return goal_tile_option;
     }
 
     // get current path so we make sure we don't intersect our own path
@@ -424,7 +378,7 @@ fn a_star_logic(
         Some(true),
         None,
         Some(future_snake_positions),
-    ).into_iter().filter(|item| !exclude_tiles.contains(item)).collect();
+    );
 
     let current_cost = *cost_so_far.get(&current_tile).unwrap_or(&0);
     // mark adj tiles as visited and link the parent node
@@ -437,10 +391,7 @@ fn a_star_logic(
         let new_cost = current_cost + movement_cost as u16;
         if previous_cost_opt.is_none() || *previous_cost_opt.unwrap() > new_cost {
             cost_so_far.insert(*tile, new_cost);
-            let mut heuristic_distance = closest_food(tile, board).unwrap_or(0.0);
-            if goal_tile_option.is_some() {
-                heuristic_distance = goal_tile_option.unwrap().distance(tile);
-            }
+            let heuristic_distance = closest_food(tile, board).unwrap_or(0.0);
             let priority = new_cost as f32 + heuristic_distance;
             // here we take the negative priority so closest points are at the top
             frontier.push(*tile, OrderedFloat(-priority));
@@ -449,14 +400,12 @@ fn a_star_logic(
     }
 
     return a_star_logic(
-        goal_tile_option,
         board,
         game_board,
         you,
         frontier,
         visited,
         cost_so_far,
-        exclude_tiles,
         connection_threshold,
     );
 }
@@ -930,5 +879,7 @@ mod test {
             Some(types::Coord { x: 6, y: 3 })
         );
         assert!(inside_box(&you, &board, &game_board, 0.3));
+        let long_path = dfs_long(&types::Coord { x: 6, y: 3 }, &board, &game_board, &you, 0.0);
+        assert_eq!(*long_path.last().unwrap(), types::Coord { x: 6, y: 3 });
     }
 }

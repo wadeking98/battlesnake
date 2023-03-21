@@ -556,19 +556,21 @@ pub fn get_move(
     // check and see if we're trapped in a box
     if graph::inside_box(you, board, &game_board, 0.3) {
         // find square to escape from
-        let escape_tile =
-            graph::find_key_hole(board, &game_board, you).unwrap_or(Coord { x: 0, y: 0 });
-        let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0);
-        let next_move = path.first();
-
-        //because we're asking it to move to an occupied tile it will sometimes suggest an occupied tile as the next move
-        if next_move.is_some()
-            && can_move_board(next_move.unwrap(), board, &game_board, you, Some(false))
-        {
-            let unit_move = *next_move.unwrap() - you.head;
-            safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
+        let escape_tile_res =
+            graph::find_key_hole(board, &game_board, you);
+        if escape_tile_res.is_some(){
+          let escape_tile = escape_tile_res.unwrap();
+          let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0);
+          let next_move = path.first();
+  
+          //because we're asking it to move to an occupied tile it will sometimes suggest an occupied tile as the next move
+          if next_move.is_some()
+              && can_move_board(next_move.unwrap(), board, &game_board, you, Some(false))
+          {
+              let unit_move = *next_move.unwrap() - you.head;
+              safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
+          }
         }
-        // safe_moves.append(&mut dirs_to_moves(unit_moves));
     }
 
     if safe_moves.len() <= 0 {

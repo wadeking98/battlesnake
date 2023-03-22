@@ -544,7 +544,7 @@ fn dirs_to_moves(dirs: Vec<types::Coord>) -> Vec<&'static str> {
 // Valid moves are "up", "down", "left", or "right"
 // See https://docs.battlesnake.com/api/example-move for available data
 pub fn get_move(
-    _game: &types::Game,
+    game: &types::Game,
     turn: &u32,
     board: &types::Board,
     you: &types::Battlesnake,
@@ -553,8 +553,8 @@ pub fn get_move(
 
     let mut safe_moves: Vec<&str> = vec![];
 
-    // check and see if we're trapped in a box
-    if graph::inside_box(you, board, &game_board, 0.3) {
+    // check and see if we're trapped in a box unless we're in constrictor mode
+    if game.ruleset.get("name").unwrap_or(&json!("")).to_string() != "\"constrictor\"" && graph::inside_box(you, board, &game_board, 0.3) {
         // find square to escape from
         let escape_tile_res =
             graph::find_key_hole(board, &game_board, you);
@@ -577,7 +577,7 @@ pub fn get_move(
         // otherwise look for food or other stuff
         let tile_connection_threshold = 0.5;
 
-        // be less hungry, try to control the center if we have high health and are suffieciently long
+        // be less hungry, try to control the center if we have high health and are sufficiently long
         let mut path: Vec<types::Coord> = Vec::new();
         if you.health < 75 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
             path = graph::a_star(board, &game_board, &you, tile_connection_threshold);

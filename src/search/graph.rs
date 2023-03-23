@@ -149,7 +149,7 @@ fn inside_box_logic(
 
     let current_tile = frontier.pop_front().unwrap();
 
-    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None)
+    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None, None)
         .into_iter()
         .filter(|item| visited.get(item).is_none())
         .collect();
@@ -214,7 +214,7 @@ pub fn find_key_hole(
     you: &types::Battlesnake,
 ) -> Option<types::Coord> {
     let mut frontier: VecDeque<types::Coord> =
-        VecDeque::from(get_adj_tiles(&you.head, board, game_board, you, None));
+        VecDeque::from(get_adj_tiles(&you.head, board, game_board, you, None, None));
     let mut visited: HashSet<types::Coord> = HashSet::new();
     let mut blocking_tiles: Vec<types::Coord> = Vec::new();
     find_blocking_tiles(
@@ -474,7 +474,7 @@ mod test {
         let board: types::Board = serde_json::from_str(BOARD_DATA).unwrap();
         let you: types::Battlesnake = board.snakes[0].clone();
         let game_board = board.to_game_board();
-        let adj = logic::get_adj_tiles(&you.head, &board, &game_board, &you, None);
+        let adj = logic::get_adj_tiles(&you.head, &board, &game_board, &you, None, None);
         assert!(
             adj.contains(&(you.head + types::DIRECTIONS["left"]))
                 && adj.contains(&(you.head + types::DIRECTIONS["right"]))

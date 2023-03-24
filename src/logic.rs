@@ -235,6 +235,9 @@ fn favourable_divergent_coords<'a>(
     exclude_tiles: &Vec<types::Coord>,
     degree_threshold: u8,
     threshold: f32,
+    avoid_snake_heads_option: Option<bool>,
+    apply_degree: Option<bool>,
+    evasive_action_option: Option<bool>,
 ) -> Vec<(&'a types::Coord, f32)> {
     let connected_unit_moves: Vec<(&types::Coord, f32)> = tiles
         .into_iter()
@@ -263,8 +266,24 @@ fn favourable_divergent_coords<'a>(
         })
         .collect();
 
-    connected_unit_moves_filtered
-        .sort_by(|(_, a_conn), (_, b_conn)| (*a_conn).partial_cmp(b_conn).unwrap());
+    connected_unit_moves_filtered.sort_by(|(a, a_conn), (b, b_conn)| {
+        let order = (*a_conn).partial_cmp(b_conn).unwrap();
+        if order == Ordering::Equal {
+            return compare_moves(
+                a,
+                b,
+                board,
+                game_board,
+                you,
+                exclude_tiles,
+                avoid_snake_heads_option,
+                apply_degree,
+                evasive_action_option,
+            );
+        }else{
+          return order;
+        }
+    });
     return connected_unit_moves_filtered;
 }
 
@@ -281,6 +300,65 @@ fn distance_to_center(tile: &types::Coord, board: &types::Board) -> f32 {
         y: board.height as i16 / 2,
     };
     return tile.distance(&center);
+}
+
+/// # compare_moves
+/// given two moves are equally connected, return the ordering that sorts the tiles from least favourable to most
+/// * a - one move for comparison
+/// * b - the other move to compare
+/// * degree_order_option - whether or not to take into account the degree of the tile in the comparison
+/// * evasive_action_option - whether to get as far away from food as possible (useful if we're about to go head to head with larger snake)
+fn compare_moves(
+    a: &types::Coord,
+    b: &types::Coord,
+    board: &types::Board,
+    game_board: &HashMap<types::Coord, types::Flags>,
+    you: &types::Battlesnake,
+    current_planned_moves: &Vec<types::Coord>,
+    avoid_snake_heads_option: Option<bool>,
+    degree_order_option: Option<bool>,
+    evasive_action_option: Option<bool>,
+) -> Ordering {
+    let evasive_action = evasive_action_option.unwrap_or(false);
+    let degree_order = degree_order_option.unwrap_or(true);
+
+    if evasive_action && board.food.len() > 0 {
+        return graph::closest_food(a, board)
+            .unwrap()
+            .partial_cmp(&graph::closest_food(b, board).unwrap())
+            .unwrap();
+    }
+
+    let adj_a: Vec<types::Coord> = get_adj_tiles(
+        a,
+        board,
+        game_board,
+        you,
+        avoid_snake_heads_option,
+        Some(current_planned_moves.to_vec()),
+    )
+    .into_iter()
+    .filter(|item| !current_planned_moves.contains(item))
+    .collect();
+    let adj_b: Vec<types::Coord> = get_adj_tiles(
+        b,
+        board,
+        game_board,
+        you,
+        avoid_snake_heads_option,
+        Some(current_planned_moves.to_vec()),
+    )
+    .into_iter()
+    .filter(|item| !current_planned_moves.contains(item))
+    .collect();
+    let conn_order = adj_a.len().cmp(&adj_b.len());
+    if conn_order == Ordering::Equal || !degree_order {
+        return distance_to_center(b, board)
+            .partial_cmp(&distance_to_center(a, board))
+            .unwrap();
+    } else {
+        return conn_order;
+    }
 }
 
 /// # get_adj_tiles_connected
@@ -305,13 +383,12 @@ pub fn get_adj_tiles_connected(
     you: &types::Battlesnake,
     threshold: f32,
     degree_threshold: u8,
-    apply_degree: bool,
+    apply_degree: Option<bool>,
     evasive_action_option: Option<bool>,
     avoid_snake_heads_option: Option<bool>,
     current_planned_moves_option: Option<Vec<types::Coord>>,
 ) -> Vec<types::Coord> {
     let current_planned_moves: Vec<types::Coord> = current_planned_moves_option.unwrap_or(vec![]);
-    let evasive_action = evasive_action_option.unwrap_or(false);
 
     // get adjacent moves if they don't loop back on the same path
     let mut moves: Vec<types::Coord> = get_adj_tiles(
@@ -325,44 +402,19 @@ pub fn get_adj_tiles_connected(
     .into_iter()
     .filter(|item| !current_planned_moves.contains(item))
     .collect();
-    // if connectivity is equal, sort moves by degree, if degree is equal, sort by distance to center
+    // if connectivity is equal, if evasive_action is enabled: move away from closest food, else: sort moves by degree, if degree is equal, sort by distance to center
     moves.sort_by(|a, b| {
-        if evasive_action && board.food.len() > 0 {
-            return graph::closest_food(a, board)
-                .unwrap()
-                .partial_cmp(&graph::closest_food(b, board).unwrap())
-                .unwrap();
-        }
-        let adj_a: Vec<types::Coord> = get_adj_tiles(
+        compare_moves(
             a,
-            board,
-            game_board,
-            you,
-            avoid_snake_heads_option,
-            Some((&current_planned_moves).to_vec()),
-        )
-        .into_iter()
-        .filter(|item| !current_planned_moves.contains(item))
-        .collect();
-        let adj_b: Vec<types::Coord> = get_adj_tiles(
             b,
             board,
             game_board,
             you,
+            &current_planned_moves,
             avoid_snake_heads_option,
-            Some((&current_planned_moves).to_vec()),
+            apply_degree,
+            evasive_action_option,
         )
-        .into_iter()
-        .filter(|item| !current_planned_moves.contains(item))
-        .collect();
-        let conn_order = adj_a.len().cmp(&adj_b.len());
-        if conn_order == Ordering::Equal || !apply_degree {
-            return distance_to_center(b, board)
-                .partial_cmp(&distance_to_center(a, board))
-                .unwrap();
-        } else {
-            return conn_order;
-        }
     });
     let unit_moves: Vec<types::Coord> = (&moves).into_iter().map(|adj| *adj - *tile).collect();
     if unit_moves.len() == 2 {
@@ -375,6 +427,9 @@ pub fn get_adj_tiles_connected(
                 &current_planned_moves,
                 degree_threshold,
                 threshold,
+                avoid_snake_heads_option,
+                apply_degree,
+                evasive_action_option,
             )
             .into_iter()
             .map(|(mv, _)| *mv)
@@ -413,6 +468,9 @@ pub fn get_adj_tiles_connected(
             &current_planned_moves,
             degree_threshold,
             threshold,
+            avoid_snake_heads_option,
+            apply_degree,
+            evasive_action_option,
         );
         //find the best connected moves on the other side of the head
         let mut favouravble_moves_2 = favourable_divergent_coords(
@@ -423,6 +481,9 @@ pub fn get_adj_tiles_connected(
             &current_planned_moves,
             degree_threshold,
             threshold,
+            avoid_snake_heads_option,
+            apply_degree,
+            evasive_action_option,
         )
         .into_iter()
         .filter(|&item| !favouravble_moves_1.contains(&item))
@@ -432,7 +493,24 @@ pub fn get_adj_tiles_connected(
         favourable_moves.append(&mut favouravble_moves_2);
 
         // sort by most connected
-        favourable_moves.sort_by(|&(_, a_conn), &(_, b_conn)| a_conn.partial_cmp(&b_conn).unwrap());
+        favourable_moves.sort_by(|&(a, a_conn), &(b, b_conn)| {
+            let order = a_conn.partial_cmp(&b_conn).unwrap();
+            if order == Ordering::Equal {
+                return compare_moves(
+                    a,
+                    b,
+                    board,
+                    game_board,
+                    you,
+                    &current_planned_moves,
+                    avoid_snake_heads_option,
+                    apply_degree,
+                    evasive_action_option,
+                );
+            } else {
+                return order;
+            }
+        });
 
         return favourable_moves.into_iter().map(|(mv, _)| *mv).collect();
     }
@@ -538,7 +616,6 @@ fn get_rand_moves(
     degree_threshold: u8,
     apply_degree_option: Option<bool>,
 ) -> Vec<&'static str> {
-    let apply_degree = apply_degree_option.unwrap_or(true);
     let mut safe_moves = get_adj_tiles_connected(
         from_point,
         board,
@@ -546,7 +623,7 @@ fn get_rand_moves(
         you,
         threshold,
         degree_threshold,
-        apply_degree,
+        apply_degree_option,
         None,
         None,
         None,
@@ -559,7 +636,7 @@ fn get_rand_moves(
             you,
             0.0,
             0,
-            apply_degree,
+            apply_degree_option,
             Some(true),
             Some(false),
             None,
@@ -1150,7 +1227,7 @@ mod tests {
             you,
             0.8,
             0,
-            false,
+            Some(false),
             None,
             Some(true),
             None,
@@ -1163,7 +1240,7 @@ mod tests {
             you,
             0.01,
             0,
-            false,
+            Some(false),
             None,
             Some(true),
             None,

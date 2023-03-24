@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// * game_board - the hash table representation of the game board (used for faster lookup)
 /// * you - our battlesnake
 /// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
 /// ## Returns:
 /// a path from our starting point to the goal
 pub fn dfs_long(
@@ -21,6 +22,7 @@ pub fn dfs_long(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     connection_threshold: f32,
+    degree_threshold: u8
 ) -> Vec<types::Coord> {
     let mut visited: HashMap<types::Coord, types::Coord> = HashMap::new();
     let success = depth_first_search_logic(
@@ -31,6 +33,7 @@ pub fn dfs_long(
         you,
         &mut visited,
         connection_threshold,
+        degree_threshold
     );
     return match success {
         Some(tile) => backtrack(tile, &visited),
@@ -48,6 +51,7 @@ pub fn dfs_long(
 /// * frontier - keeps track of the tiles we haven't visited yet in our search
 /// * visited - keeps track of the tiles we've already visited during our search and their parent nodes (values are the parent coords)
 /// * connection_threshold - the connectedness threshold we want tiles in the path to adhere to
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
 /// ## Returns:
 /// an option of a tile containing a food if a path is successfully found
 fn depth_first_search_logic(
@@ -58,6 +62,7 @@ fn depth_first_search_logic(
     you: &types::Battlesnake,
     visited: &mut HashMap<types::Coord, types::Coord>,
     connection_threshold: f32,
+    degree_threshold: u8,
 ) -> Option<types::Coord> {
     if from.distance(goal) <= 1.0 {
         visited.insert(*goal, *from);
@@ -76,8 +81,10 @@ fn depth_first_search_logic(
         board,
         &game_board,
         you,
-        connection_threshold,
-        Some(false),
+        0.0,
+        0,
+        true,
+        None,
         None,
         Some(future_snake_positions),
     )
@@ -98,6 +105,7 @@ fn depth_first_search_logic(
             you,
             visited,
             connection_threshold,
+            degree_threshold
         );
         if success.is_some() {
             return success;
@@ -143,7 +151,7 @@ fn inside_box_logic(
 
     let current_tile = frontier.pop_front().unwrap();
 
-    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None)
+    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None, None)
         .into_iter()
         .filter(|item| visited.get(item).is_none())
         .collect();
@@ -208,7 +216,7 @@ pub fn find_key_hole(
     you: &types::Battlesnake,
 ) -> Option<types::Coord> {
     let mut frontier: VecDeque<types::Coord> =
-        VecDeque::from(get_adj_tiles(&you.head, board, game_board, you, None));
+        VecDeque::from(get_adj_tiles(&you.head, board, game_board, you, None, None));
     let mut visited: HashSet<types::Coord> = HashSet::new();
     let mut blocking_tiles: Vec<types::Coord> = Vec::new();
     find_blocking_tiles(
@@ -284,7 +292,7 @@ fn backtrack(
     return cleaned_path;
 }
 
-fn closest_food(tile: &types::Coord, board: &types::Board) -> Option<f32> {
+pub fn closest_food(tile: &types::Coord, board: &types::Board) -> Option<f32> {
     if board.food.len() <= 0 {
         return None;
     }
@@ -300,6 +308,7 @@ fn closest_food(tile: &types::Coord, board: &types::Board) -> Option<f32> {
 /// * game_board - hashmap representation of the board
 /// * you - your battlesnake
 /// * connection_threshold - only go to goal if it passes this connection threshold
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
 /// ## Returns:
 /// The shortest path to the goal tile
 pub fn a_star(
@@ -307,6 +316,7 @@ pub fn a_star(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     connection_threshold: f32,
+    degree_threshold: u8
 ) -> Vec<types::Coord> {
     let mut frontier: PriorityQueue<types::Coord, OrderedFloat<f32>> = PriorityQueue::new();
     frontier.push(you.head, OrderedFloat(0.0));
@@ -320,6 +330,7 @@ pub fn a_star(
         &mut visited,
         &mut cost_so_far,
         connection_threshold,
+        degree_threshold
     );
 
     return match path_found {
@@ -340,6 +351,7 @@ pub fn a_star(
 /// * cost_so_far - used to remember the current cost of the path
 /// * exclude_tiles - mark specified tiles as blocked, for example the starting tile if it's not a snake body
 /// * connection_threshold - only go to goal if it passes this connection threshold
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
 /// ## Returns:
 /// The goal tile if a path is found
 fn a_star_logic(
@@ -350,6 +362,7 @@ fn a_star_logic(
     visited: &mut HashMap<types::Coord, types::Coord>,
     cost_so_far: &mut HashMap<types::Coord, u16>,
     connection_threshold: f32,
+    degree_threshold: u8,
 ) -> Option<types::Coord> {
     if frontier.is_empty() {
         return None;
@@ -378,7 +391,9 @@ fn a_star_logic(
         &game_board,
         you,
         connection_threshold,
-        Some(true),
+        degree_threshold,
+        true,
+        None,
         None,
         Some(future_snake_positions),
     );
@@ -410,6 +425,7 @@ fn a_star_logic(
         visited,
         cost_so_far,
         connection_threshold,
+        degree_threshold
     );
 }
 
@@ -462,7 +478,7 @@ mod test {
         let board: types::Board = serde_json::from_str(BOARD_DATA).unwrap();
         let you: types::Battlesnake = board.snakes[0].clone();
         let game_board = board.to_game_board();
-        let adj = logic::get_adj_tiles(&you.head, &board, &game_board, &you, None);
+        let adj = logic::get_adj_tiles(&you.head, &board, &game_board, &you, None, None);
         assert!(
             adj.contains(&(you.head + types::DIRECTIONS["left"]))
                 && adj.contains(&(you.head + types::DIRECTIONS["right"]))
@@ -531,13 +547,13 @@ mod test {
         let mut you = board.snakes[0].clone();
         let game_board = board.to_game_board();
 
-        let a_star_path = a_star(&board, &game_board, &you, 0.5);
+        let a_star_path = a_star(&board, &game_board, &you, 0.5, 0);
         assert!(
             a_star_path.len() > 0
                 && a_star_path[a_star_path.len() - 1] == types::Coord { x: 0, y: 10 }
         );
         you.health = 3;
-        let a_star_path_low = a_star(&board, &game_board, &you, 0.5);
+        let a_star_path_low = a_star(&board, &game_board, &you, 0.5, 0);
         assert!(a_star_path_low.len() <= 0);
     }
     #[test]
@@ -620,7 +636,7 @@ mod test {
         let you = &board.snakes[0];
         let game_board = board.to_game_board();
 
-        let a_star_path = a_star(&board, &game_board, you, 0.5);
+        let a_star_path = a_star(&board, &game_board, you, 0.5, 0);
         // a valid path cannot exist here because approaching the tile disconnects it from the rest of the board
         assert!(a_star_path.len() <= 0);
     }
@@ -882,7 +898,7 @@ mod test {
             Some(types::Coord { x: 6, y: 3 })
         );
         assert!(inside_box(&you, &board, &game_board, 0.3));
-        let long_path = dfs_long(&types::Coord { x: 6, y: 3 }, &board, &game_board, &you, 0.0);
+        let long_path = dfs_long(&types::Coord { x: 6, y: 3 }, &board, &game_board, &you, 0.0, 0);
         assert_eq!(*long_path.last().unwrap(), types::Coord { x: 6, y: 3 });
     }
 }

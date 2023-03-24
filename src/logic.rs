@@ -58,6 +58,7 @@ pub fn get_snake_from_tile<'a>(
 /// * game_board - the hashmap representation of the game board
 /// * you - your battlesnake
 /// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
+/// * current_planned_moves_option - option to exclude a set of tiles from search
 /// ## Returns:
 /// vector of tiles adjacent to the given tile that the snake can move to
 pub fn get_adj_tiles(
@@ -66,11 +67,15 @@ pub fn get_adj_tiles(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     avoid_snake_heads_option: Option<bool>,
+    current_planned_moves_option: Option<Vec<types::Coord>>,
 ) -> Vec<types::Coord> {
+    let current_planned_moves = current_planned_moves_option.unwrap_or(vec![]);
     let mut adj: Vec<types::Coord> = vec![];
     for (.., dir) in types::DIRECTIONS.into_iter() {
         let new_point = *dir + *tile;
-        if can_move_board(&new_point, board, game_board, you, avoid_snake_heads_option) {
+        if can_move_board(&new_point, board, game_board, you, avoid_snake_heads_option)
+            && !current_planned_moves.contains(&new_point)
+        {
             adj.push(new_point)
         }
     }
@@ -141,10 +146,11 @@ fn num_connected_tiles(
         return 1;
     }
     let current_tile = frontier.pop_front().unwrap();
-    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None)
-        .into_iter()
-        .filter(|adj| visited.get(adj).is_none() && !exclude_tiles.contains(adj))
-        .collect();
+    let adj_tiles: Vec<types::Coord> =
+        get_adj_tiles(&current_tile, board, game_board, you, None, None)
+            .into_iter()
+            .filter(|adj| visited.get(adj).is_none() && !exclude_tiles.contains(adj))
+            .collect();
     visited.extend(adj_tiles.clone());
     let mut adj_deque = VecDeque::from(adj_tiles);
     frontier.append(&mut adj_deque);
@@ -217,7 +223,7 @@ fn coords_diverge(
 /// * you - your battlesnake
 /// * exclude_tiles - list of tiles to exclude from flood fill, useful when we want to calculate connectivity of a tile given a snake's future position
 /// * threshold - the percentage of total free tiles you want to be connected to
-/// * strict - true if you want to exclude all provided tiles that fall below the given threshold
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
 /// ## Returns:
 /// if strict is true it returns a reference to all the provided tiles that are connected above the threshold, otherwise it returns an array of
 /// tiles and their corresponding connectivity index sorted in order from least connected to most
@@ -227,8 +233,8 @@ fn favourable_divergent_coords<'a>(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     exclude_tiles: &Vec<types::Coord>,
+    degree_threshold: u8,
     threshold: f32,
-    strict: bool,
 ) -> Vec<(&'a types::Coord, f32)> {
     let connected_unit_moves: Vec<(&types::Coord, f32)> = tiles
         .into_iter()
@@ -242,11 +248,21 @@ fn favourable_divergent_coords<'a>(
     let mut connected_unit_moves_filtered: Vec<(&types::Coord, f32)> = connected_unit_moves
         .clone()
         .into_iter()
-        .filter(|(_, conn)| *conn >= threshold)
+        .filter(|(&tile, conn)| {
+            *conn >= threshold
+                && get_adj_tiles(
+                    &tile,
+                    board,
+                    game_board,
+                    you,
+                    None,
+                    Some(exclude_tiles.to_vec()),
+                )
+                .len() as u8
+                    >= degree_threshold
+        })
         .collect();
-    if connected_unit_moves_filtered.len() <= 0 && !strict {
-        connected_unit_moves_filtered = connected_unit_moves;
-    }
+
     connected_unit_moves_filtered
         .sort_by(|(_, a_conn), (_, b_conn)| (*a_conn).partial_cmp(b_conn).unwrap());
     return connected_unit_moves_filtered;
@@ -275,7 +291,8 @@ fn distance_to_center(tile: &types::Coord, board: &types::Board) -> f32 {
 /// * game_board - the hashmap representation of the game board
 /// * you - your battlesnake
 /// * theshold - the desired connectedness of any adjacent tiles
-/// * strict - if true then only tiles that fall above the connectedness threshold will be returned
+/// * degree_threshold - the minimum number of adjacent tiles that a given tile must have to be considered valid
+/// * apply_degree - whether or not to apply the degree threshold / sorting
 /// * avoid_snake_heads_option - option to avoid tiles adjacent to the heads of larger snakes
 /// * current_planned_moves_option - option to avoid the provided tiles
 /// ## Returns:
@@ -287,24 +304,65 @@ pub fn get_adj_tiles_connected(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     threshold: f32,
-    strict_option: Option<bool>,
+    degree_threshold: u8,
+    apply_degree: bool,
+    evasive_action_option: Option<bool>,
     avoid_snake_heads_option: Option<bool>,
     current_planned_moves_option: Option<Vec<types::Coord>>,
 ) -> Vec<types::Coord> {
-    let strict = strict_option.unwrap_or(false);
     let current_planned_moves: Vec<types::Coord> = current_planned_moves_option.unwrap_or(vec![]);
+    let evasive_action = evasive_action_option.unwrap_or(false);
 
     // get adjacent moves if they don't loop back on the same path
-    let mut moves: Vec<types::Coord> =
-        get_adj_tiles(tile, board, game_board, you, avoid_snake_heads_option)
-            .into_iter()
-            .filter(|item| !current_planned_moves.contains(item))
-            .collect();
-    //sort moves by distance to center if they're equally connected
+    let mut moves: Vec<types::Coord> = get_adj_tiles(
+        tile,
+        board,
+        game_board,
+        you,
+        avoid_snake_heads_option,
+        Some((&current_planned_moves).to_vec()),
+    )
+    .into_iter()
+    .filter(|item| !current_planned_moves.contains(item))
+    .collect();
+    // if connectivity is equal, sort moves by degree, if degree is equal, sort by distance to center
     moves.sort_by(|a, b| {
-        distance_to_center(b, board)
-            .partial_cmp(&distance_to_center(a, board))
-            .unwrap()
+        if evasive_action && board.food.len() > 0 {
+            return graph::closest_food(a, board)
+                .unwrap()
+                .partial_cmp(&graph::closest_food(b, board).unwrap())
+                .unwrap();
+        }
+        let adj_a: Vec<types::Coord> = get_adj_tiles(
+            a,
+            board,
+            game_board,
+            you,
+            avoid_snake_heads_option,
+            Some((&current_planned_moves).to_vec()),
+        )
+        .into_iter()
+        .filter(|item| !current_planned_moves.contains(item))
+        .collect();
+        let adj_b: Vec<types::Coord> = get_adj_tiles(
+            b,
+            board,
+            game_board,
+            you,
+            avoid_snake_heads_option,
+            Some((&current_planned_moves).to_vec()),
+        )
+        .into_iter()
+        .filter(|item| !current_planned_moves.contains(item))
+        .collect();
+        let conn_order = adj_a.len().cmp(&adj_b.len());
+        if conn_order == Ordering::Equal || !apply_degree {
+            return distance_to_center(b, board)
+                .partial_cmp(&distance_to_center(a, board))
+                .unwrap();
+        } else {
+            return conn_order;
+        }
     });
     let unit_moves: Vec<types::Coord> = (&moves).into_iter().map(|adj| *adj - *tile).collect();
     if unit_moves.len() == 2 {
@@ -315,8 +373,8 @@ pub fn get_adj_tiles_connected(
                 game_board,
                 you,
                 &current_planned_moves,
+                degree_threshold,
                 threshold,
-                strict,
             )
             .into_iter()
             .map(|(mv, _)| *mv)
@@ -353,8 +411,8 @@ pub fn get_adj_tiles_connected(
             game_board,
             you,
             &current_planned_moves,
+            degree_threshold,
             threshold,
-            strict,
         );
         //find the best connected moves on the other side of the head
         let mut favouravble_moves_2 = favourable_divergent_coords(
@@ -363,8 +421,8 @@ pub fn get_adj_tiles_connected(
             game_board,
             you,
             &current_planned_moves,
+            degree_threshold,
             threshold,
-            strict,
         )
         .into_iter()
         .filter(|&item| !favouravble_moves_1.contains(&item))
@@ -376,23 +434,7 @@ pub fn get_adj_tiles_connected(
         // sort by most connected
         favourable_moves.sort_by(|&(_, a_conn), &(_, b_conn)| a_conn.partial_cmp(&b_conn).unwrap());
 
-        // if strict is off, we may have parts of an array that pass the connected threshold value and parts that don't because we looked at both sides of the head
-        // if any part of the array passes the connected threshold, filter the whole array to only include values that pass that threshold
-        let mut favourable_moves_filtered: Vec<(&types::Coord, f32)> = favourable_moves
-            .clone()
-            .into_iter()
-            .filter(|(_, val)| {
-                let order = (*val).partial_cmp(&threshold).unwrap();
-                return order == Ordering::Greater || order == Ordering::Equal;
-            })
-            .collect();
-        if favourable_moves_filtered.len() <= 0 {
-            favourable_moves_filtered = favourable_moves;
-        }
-        return favourable_moves_filtered
-            .into_iter()
-            .map(|(mv, _)| *mv)
-            .collect();
+        return favourable_moves.into_iter().map(|(mv, _)| *mv).collect();
     }
     return moves;
 }
@@ -483,6 +525,8 @@ pub fn can_move_board(
 /// * game_board - the hashmap representation of the game board
 /// * you - your battlesnake
 /// * theshold - the connectedness theshold we want of a tile to be considered favourable
+/// * degree_threshold - the degree (number of adj tiles) threshold we want of a tile to be considered favourable
+/// * apply_degree_option - whether or not to apply the degree threshold/sorting
 /// ## Returns:
 /// an array of move options
 fn get_rand_moves(
@@ -491,14 +535,19 @@ fn get_rand_moves(
     game_board: &HashMap<types::Coord, types::Flags>,
     you: &types::Battlesnake,
     threshold: f32,
+    degree_threshold: u8,
+    apply_degree_option: Option<bool>,
 ) -> Vec<&'static str> {
+    let apply_degree = apply_degree_option.unwrap_or(true);
     let mut safe_moves = get_adj_tiles_connected(
         from_point,
         board,
         game_board,
         you,
         threshold,
-        Some(false),
+        degree_threshold,
+        apply_degree,
+        None,
         None,
         None,
     );
@@ -508,8 +557,10 @@ fn get_rand_moves(
             board,
             game_board,
             you,
-            threshold,
-            Some(false),
+            0.0,
+            0,
+            apply_degree,
+            Some(true),
             Some(false),
             None,
         );
@@ -552,35 +603,41 @@ pub fn get_move(
     let game_board = board.to_game_board();
 
     let mut safe_moves: Vec<&str> = vec![];
+    let game_mode = game.ruleset.get("name").unwrap_or(&json!("")).to_string();
 
     // check and see if we're trapped in a box unless we're in constrictor mode
-    if game.ruleset.get("name").unwrap_or(&json!("")).to_string() != "\"constrictor\"" && graph::inside_box(you, board, &game_board, 0.3) {
+    if game_mode != "\"constrictor\"" && graph::inside_box(you, board, &game_board, 0.3) {
         // find square to escape from
-        let escape_tile_res =
-            graph::find_key_hole(board, &game_board, you);
-        if escape_tile_res.is_some(){
-          let escape_tile = escape_tile_res.unwrap();
-          let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0);
-          let next_move = path.first();
-  
-          //because we're asking it to move to an occupied tile it will sometimes suggest an occupied tile as the next move
-          if next_move.is_some()
-              && can_move_board(next_move.unwrap(), board, &game_board, you, Some(false))
-          {
-              let unit_move = *next_move.unwrap() - you.head;
-              safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
-          }
+        let escape_tile_res = graph::find_key_hole(board, &game_board, you);
+        if escape_tile_res.is_some() {
+            let escape_tile = escape_tile_res.unwrap();
+            let path = graph::dfs_long(&escape_tile, board, &game_board, you, 0.0, 0);
+            let next_move = path.first();
+
+            //because we're asking it to move to an occupied tile it will sometimes suggest an occupied tile as the next move
+            if next_move.is_some()
+                && can_move_board(next_move.unwrap(), board, &game_board, you, Some(false))
+            {
+                let unit_move = *next_move.unwrap() - you.head;
+                safe_moves.append(&mut dirs_to_moves(vec![unit_move]));
+            }
         }
     }
-
     if safe_moves.len() <= 0 {
         // otherwise look for food or other stuff
         let tile_connection_threshold = 0.5;
+        let degree_threshold: u8 = 2;
 
         // be less hungry, try to control the center if we have high health and are sufficiently long
         let mut path: Vec<types::Coord> = Vec::new();
-        if you.health < 75 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
-            path = graph::a_star(board, &game_board, &you, tile_connection_threshold);
+        if you.health < 80 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
+            path = graph::a_star(
+                board,
+                &game_board,
+                &you,
+                tile_connection_threshold,
+                degree_threshold,
+            );
         }
 
         if path.len() > 0 {
@@ -602,6 +659,8 @@ pub fn get_move(
                 &game_board,
                 you,
                 tile_connection_threshold,
+                degree_threshold,
+                Some(false),
             );
             safe_moves.append(&mut rand_moves);
         }
@@ -1090,8 +1149,10 @@ mod tests {
             &game_board,
             you,
             0.8,
-            Some(true),
+            0,
+            false,
             None,
+            Some(true),
             None,
         );
         assert!(connected_tiles[0] == Coord { x: 4, y: 4 });
@@ -1101,13 +1162,132 @@ mod tests {
             &game_board,
             you,
             0.01,
-            Some(true),
+            0,
+            false,
             None,
+            Some(true),
             None,
         );
         assert!(
             connected_tiles.len() == 3
                 && connected_tiles[connected_tiles.len() - 1] == Coord { x: 4, y: 4 }
         );
+    }
+
+    #[test]
+    fn evasive_action() {
+        const BOARD_DATA: &str = r#"
+      {
+        "food": [
+          {
+            "x": 5,
+            "y": 5
+          }
+        ],
+        "snakes": [
+          {
+            "id": "gLavM",
+            "name": "snake gLavM",
+            "health": 100,
+            "body": [
+              {
+                "x": 4,
+                "y": 4
+              },
+              {
+                "x": 3,
+                "y": 4
+              },
+              {
+                "x": 2,
+                "y": 4
+              },
+              {
+                "x": 1,
+                "y": 4
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 4,
+              "y": 4
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          },
+          {
+            "id": "9xCwO",
+            "name": "snake 9xCwO",
+            "health": 100,
+            "body": [
+              {
+                "x": 5,
+                "y": 3
+              },
+              {
+                "x": 5,
+                "y": 2
+              },
+              {
+                "x": 5,
+                "y": 1
+              },
+              {
+                "x": 5,
+                "y": 0
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 5,
+              "y": 3
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          },
+          {
+            "id": "jWzco",
+            "name": "snake jWzco",
+            "health": 100,
+            "body": [
+              {
+                "x": 4,
+                "y": 6
+              },
+              {
+                "x": 4,
+                "y": 7
+              },
+              {
+                "x": 4,
+                "y": 8
+              },
+              {
+                "x": 4,
+                "y": 9
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 4,
+              "y": 6
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          }
+        ],
+        "width": 11,
+        "height": 11,
+        "hazards": []
+      }
+      "#;
+        let board: types::Board = serde_json::from_str(BOARD_DATA).unwrap();
+        let game_board = board.to_game_board();
+        let you: &types::Battlesnake = &board.snakes[0];
+        let moves = get_rand_moves(&you.head, &board, &game_board, you, 0.3, 2, None);
+        assert_eq!(*moves.last().unwrap(), "down");
     }
 }

@@ -83,6 +83,7 @@ fn depth_first_search_logic(
         you,
         0.0,
         0,
+        true,
         None,
         Some(future_snake_positions),
     )
@@ -390,6 +391,7 @@ fn a_star_logic(
         you,
         connection_threshold,
         degree_threshold,
+        true,
         None,
         Some(future_snake_positions),
     );

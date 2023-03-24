@@ -146,10 +146,11 @@ fn num_connected_tiles(
         return 1;
     }
     let current_tile = frontier.pop_front().unwrap();
-    let adj_tiles: Vec<types::Coord> = get_adj_tiles(&current_tile, board, game_board, you, None, None)
-        .into_iter()
-        .filter(|adj| visited.get(adj).is_none() && !exclude_tiles.contains(adj))
-        .collect();
+    let adj_tiles: Vec<types::Coord> =
+        get_adj_tiles(&current_tile, board, game_board, you, None, None)
+            .into_iter()
+            .filter(|adj| visited.get(adj).is_none() && !exclude_tiles.contains(adj))
+            .collect();
     visited.extend(adj_tiles.clone());
     let mut adj_deque = VecDeque::from(adj_tiles);
     frontier.append(&mut adj_deque);
@@ -249,7 +250,15 @@ fn favourable_divergent_coords<'a>(
         .into_iter()
         .filter(|(&tile, conn)| {
             *conn >= threshold
-                && get_adj_tiles(&tile, board, game_board, you, None, Some(exclude_tiles.to_vec())).len() as u8
+                && get_adj_tiles(
+                    &tile,
+                    board,
+                    game_board,
+                    you,
+                    None,
+                    Some(exclude_tiles.to_vec()),
+                )
+                .len() as u8
                     >= degree_threshold
         })
         .collect();
@@ -297,29 +306,55 @@ pub fn get_adj_tiles_connected(
     threshold: f32,
     degree_threshold: u8,
     apply_degree: bool,
+    evasive_action_option: Option<bool>,
     avoid_snake_heads_option: Option<bool>,
     current_planned_moves_option: Option<Vec<types::Coord>>,
 ) -> Vec<types::Coord> {
     let current_planned_moves: Vec<types::Coord> = current_planned_moves_option.unwrap_or(vec![]);
+    let evasive_action = evasive_action_option.unwrap_or(false);
 
     // get adjacent moves if they don't loop back on the same path
-    let mut moves: Vec<types::Coord> =
-        get_adj_tiles(tile, board, game_board, you, avoid_snake_heads_option, Some((&current_planned_moves).to_vec()))
-            .into_iter()
-            .filter(|item| !current_planned_moves.contains(item))
-            .collect();
+    let mut moves: Vec<types::Coord> = get_adj_tiles(
+        tile,
+        board,
+        game_board,
+        you,
+        avoid_snake_heads_option,
+        Some((&current_planned_moves).to_vec()),
+    )
+    .into_iter()
+    .filter(|item| !current_planned_moves.contains(item))
+    .collect();
     // if connectivity is equal, sort moves by degree, if degree is equal, sort by distance to center
     moves.sort_by(|a, b| {
-        let adj_a: Vec<types::Coord> =
-            get_adj_tiles(a, board, game_board, you, avoid_snake_heads_option, Some((&current_planned_moves).to_vec()))
-                .into_iter()
-                .filter(|item| !current_planned_moves.contains(item))
-                .collect();
-        let adj_b: Vec<types::Coord> =
-            get_adj_tiles(b, board, game_board, you, avoid_snake_heads_option, Some((&current_planned_moves).to_vec()))
-                .into_iter()
-                .filter(|item| !current_planned_moves.contains(item))
-                .collect();
+        if evasive_action && board.food.len() > 0 {
+            return graph::closest_food(a, board)
+                .unwrap()
+                .partial_cmp(&graph::closest_food(b, board).unwrap())
+                .unwrap();
+        }
+        let adj_a: Vec<types::Coord> = get_adj_tiles(
+            a,
+            board,
+            game_board,
+            you,
+            avoid_snake_heads_option,
+            Some((&current_planned_moves).to_vec()),
+        )
+        .into_iter()
+        .filter(|item| !current_planned_moves.contains(item))
+        .collect();
+        let adj_b: Vec<types::Coord> = get_adj_tiles(
+            b,
+            board,
+            game_board,
+            you,
+            avoid_snake_heads_option,
+            Some((&current_planned_moves).to_vec()),
+        )
+        .into_iter()
+        .filter(|item| !current_planned_moves.contains(item))
+        .collect();
         let conn_order = adj_a.len().cmp(&adj_b.len());
         if conn_order == Ordering::Equal || !apply_degree {
             return distance_to_center(b, board)
@@ -501,7 +536,7 @@ fn get_rand_moves(
     you: &types::Battlesnake,
     threshold: f32,
     degree_threshold: u8,
-    apply_degree_option: Option<bool>
+    apply_degree_option: Option<bool>,
 ) -> Vec<&'static str> {
     let apply_degree = apply_degree_option.unwrap_or(true);
     let mut safe_moves = get_adj_tiles_connected(
@@ -514,6 +549,7 @@ fn get_rand_moves(
         apply_degree,
         None,
         None,
+        None,
     );
     if safe_moves.len() <= 0 {
         safe_moves = get_adj_tiles_connected(
@@ -524,6 +560,7 @@ fn get_rand_moves(
             0.0,
             0,
             apply_degree,
+            Some(true),
             Some(false),
             None,
         );
@@ -591,7 +628,17 @@ pub fn get_move(
         let tile_connection_threshold = 0.5;
         let degree_threshold: u8 = 2;
 
-        let path = graph::a_star(board, &game_board, &you, tile_connection_threshold, degree_threshold);
+        // be less hungry, try to control the center if we have high health and are sufficiently long
+        let mut path: Vec<types::Coord> = Vec::new();
+        if you.health < 80 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
+            path = graph::a_star(
+                board,
+                &game_board,
+                &you,
+                tile_connection_threshold,
+                degree_threshold,
+            );
+        }
 
         if path.len() > 0 {
             let dir_vector = path[0] - you.head;
@@ -613,7 +660,7 @@ pub fn get_move(
                 you,
                 tile_connection_threshold,
                 degree_threshold,
-                Some(game_mode != "\"constrictor\"")
+                Some(false),
             );
             safe_moves.append(&mut rand_moves);
         }
@@ -1104,6 +1151,7 @@ mod tests {
             0.8,
             0,
             false,
+            None,
             Some(true),
             None,
         );
@@ -1116,6 +1164,7 @@ mod tests {
             0.01,
             0,
             false,
+            None,
             Some(true),
             None,
         );
@@ -1123,5 +1172,122 @@ mod tests {
             connected_tiles.len() == 3
                 && connected_tiles[connected_tiles.len() - 1] == Coord { x: 4, y: 4 }
         );
+    }
+
+    #[test]
+    fn evasive_action() {
+        const BOARD_DATA: &str = r#"
+      {
+        "food": [
+          {
+            "x": 5,
+            "y": 5
+          }
+        ],
+        "snakes": [
+          {
+            "id": "gLavM",
+            "name": "snake gLavM",
+            "health": 100,
+            "body": [
+              {
+                "x": 4,
+                "y": 4
+              },
+              {
+                "x": 3,
+                "y": 4
+              },
+              {
+                "x": 2,
+                "y": 4
+              },
+              {
+                "x": 1,
+                "y": 4
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 4,
+              "y": 4
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          },
+          {
+            "id": "9xCwO",
+            "name": "snake 9xCwO",
+            "health": 100,
+            "body": [
+              {
+                "x": 5,
+                "y": 3
+              },
+              {
+                "x": 5,
+                "y": 2
+              },
+              {
+                "x": 5,
+                "y": 1
+              },
+              {
+                "x": 5,
+                "y": 0
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 5,
+              "y": 3
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          },
+          {
+            "id": "jWzco",
+            "name": "snake jWzco",
+            "health": 100,
+            "body": [
+              {
+                "x": 4,
+                "y": 6
+              },
+              {
+                "x": 4,
+                "y": 7
+              },
+              {
+                "x": 4,
+                "y": 8
+              },
+              {
+                "x": 4,
+                "y": 9
+              }
+            ],
+            "latency": 0,
+            "head": {
+              "x": 4,
+              "y": 6
+            },
+            "length": 4,
+            "shout": "",
+            "squad": ""
+          }
+        ],
+        "width": 11,
+        "height": 11,
+        "hazards": []
+      }
+      "#;
+        let board: types::Board = serde_json::from_str(BOARD_DATA).unwrap();
+        let game_board = board.to_game_board();
+        let you: &types::Battlesnake = &board.snakes[0];
+        let moves = get_rand_moves(&you.head, &board, &game_board, you, 0.3, 2, None);
+        assert_eq!(*moves.last().unwrap(), "down");
     }
 }

@@ -85,6 +85,7 @@ fn depth_first_search_logic(
         0,
         true,
         None,
+        None,
         Some(future_snake_positions),
     )
     .into_iter()
@@ -291,7 +292,7 @@ fn backtrack(
     return cleaned_path;
 }
 
-fn closest_food(tile: &types::Coord, board: &types::Board) -> Option<f32> {
+pub fn closest_food(tile: &types::Coord, board: &types::Board) -> Option<f32> {
     if board.food.len() <= 0 {
         return None;
     }
@@ -392,6 +393,7 @@ fn a_star_logic(
         connection_threshold,
         degree_threshold,
         true,
+        None,
         None,
         Some(future_snake_positions),
     );

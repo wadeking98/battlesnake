@@ -280,8 +280,8 @@ fn favourable_divergent_coords<'a>(
                 apply_degree,
                 evasive_action_option,
             );
-        }else{
-          return order;
+        } else {
+            return order;
         }
     });
     return connected_unit_moves_filtered;
@@ -706,16 +706,13 @@ pub fn get_move(
         let degree_threshold: u8 = 2;
 
         // be less hungry, try to control the center if we have high health and are sufficiently long
-        let mut path: Vec<types::Coord> = Vec::new();
-        if you.health < 80 || (you.length as f32 / (board.width * board.height) as f32) < 0.15 {
-            path = graph::a_star(
-                board,
-                &game_board,
-                &you,
-                tile_connection_threshold,
-                degree_threshold,
-            );
-        }
+        let path: Vec<types::Coord> = graph::a_star(
+            board,
+            &game_board,
+            &you,
+            tile_connection_threshold,
+            degree_threshold,
+        );
 
         if path.len() > 0 {
             let dir_vector = path[0] - you.head;

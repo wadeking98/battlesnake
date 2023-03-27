@@ -227,6 +227,9 @@ pub fn find_key_hole(
         &mut blocking_tiles,
     );
 
+    // make sure we don't try to move back on our own head
+    blocking_tiles = blocking_tiles.into_iter().filter(|tile| *tile != you.head).collect();
+
     blocking_tiles.sort_by(|a, b| {
         let index_a;
         let index_b;
